@@ -1,0 +1,473 @@
+<div align="center">
+
+# instr-core
+
+**Safe, verifiable instrument-control context for AI coding assistants.**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Python](https://img.shields.io/badge/Language-Python-3776ab?logo=python&logoColor=white)](https://www.python.org/)
+[![Status: Pre-release](https://img.shields.io/badge/Status-Pre--release-yellow)]()
+[![中文文档](https://img.shields.io/badge/Docs-中文-red)](./README_zh-CN.md)
+
+[instr.cc](https://instr.cc) · [中文](./README_zh-CN.md)
+
+</div>
+
+---
+
+## Why Is AI-Generated Instrument Control Dangerous?
+
+Today's general-purpose LLMs (such as GPT-4o, Claude 3.5 Sonnet) do understand Python, and some have even memorized PyVISA's API documentation. But they have two fatal flaws:
+
+**They don't have the manual for *this* instrument:**
+
+The same Keithley power supply can have completely different low-level SCPI command details and register status bits between model 2400 and 2450. AI often "guesses" when writing commands, which easily leads to errors.
+
+**They have no physical common sense or safety boundaries:**
+
+AI doesn't know that a precision device rated for only 10V will literally be destroyed if you write `SOUR:VOLT 50` to it. It's just outputting text.
+
+---
+
+## How Does instr-core "Assist" AI?
+
+This project adopts one of the most prominent ideas in the AI Agent space — MCP (Model Context Protocol) — turning the traditional human workflow into an AI workflow:
+
+**Feeding AI a structured "instrument dictionary" (Schema):**
+
+Instead of dumping hundreds of pages of English PDF manuals on the AI and letting it slowly summarize, instr-core advocates using standardized YAML/JSON files to solidify an instrument's capabilities, ranges, and command sets. Before writing code, the AI reads this Schema (context) and instantly knows what the instrument can and cannot do.
+
+**Mandatory "interception and validation" (Validation):**
+
+When the AI (or a human using Copilot) writes a snippet of hardware-calling code, instr-core's underlying layer intercepts it. It checks: Is this voltage out of range? Is this channel currently enabled? If it doesn't match the rules, it throws an error at the software level — never sending dangerous commands to physical serial ports or network interfaces.
+
+---
+
+## What Does This Mean for Future Test Engineers?
+
+If this model (a Schema-based AI hardware driver layer) matures and becomes an industry standard, the way hardware test engineers work will be fundamentally transformed:
+
+**Past:**
+
+Engineers held multimeters and instrument programming manuals in hand, typing SCPI commands line by line and wrapping low-level Python classes.
+
+**Future:**
+
+Engineers become "rule makers." Your core job is to write and maintain instrument YAML Schemas (defining safety boundaries and state machines), then give the AI high-level instructions: "Write me a script to scan the chip's leakage current from 1V to 5V, in 0.1V steps, and plot it on a chart." The remaining low-level handshaking and fool-proofing is automatically handled by AI + instr-core.
+
+The engineer's core value shifts from "operator" to "rule designer" — the AI is merely the tool that executes the safety boundaries you define.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TD
+    subgraph IDE["AI Coding Assistant"]
+        A["Claude / Cursor / GPT"]
+    end
+
+    subgraph CORE["instr-core"]
+        B["MCP Server"]
+        C["Validation Engine"]
+        D["Safety Constraints"]
+    end
+
+    subgraph REG["Instrument Registry"]
+        E["YAML / JSON Schemas"]
+        F["State Machine Rules"]
+        G["Safety Limits"]
+    end
+
+    subgraph HW["Physical Instruments"]
+        H["VISA / SCPI / PXI"]
+    end
+
+    A -->|"MCP Protocol"| B
+    B --> C
+    C --> D
+    D -->|"Validated Commands"| H
+    E --> C
+    F --> C
+    G --> D
+
+    style IDE fill:#1e1e2e,stroke:#89b4fa,color:#cdd6f4
+    style CORE fill:#1e1e2e,stroke:#a6e3a1,color:#cdd6f4
+    style REG fill:#1e1e2e,stroke:#f9e2af,color:#cdd6f4
+    style HW fill:#1e1e2e,stroke:#f38ba8,color:#cdd6f4
+```
+
+---
+
+## Core Tools
+
+instr-core exposes the following tools to the AI via the MCP protocol. All calls happen **before** code generation; none directly touch hardware:
+
+| Tool | Purpose |
+| --- | --- |
+| `validate_instrument_state` | Validate a single SCPI command (range, state, safety rules). |
+| `validate_command_sequence` | Validate an entire command sequence, tracking cross-command state transitions. |
+| `list_instruments` / `search_instruments` | Browse loaded instruments and their metadata in the Registry. |
+| `get_command_tree` | Get the full SCPI command tree for an instrument. |
+| `get_command_detail` | Get detailed constraints for a single command (range, requires, forbidden_when, safety). |
+| `get_safety_limits` | Get global safety boundaries (max voltage, current, power). |
+| `get_instrument_sop` | Prompt that injects the full instrument schema (including safety limits) into the AI context for safe code generation. |
+
+---
+
+## Instructions as Context
+
+`instr-core` proposes a new principle:
+
+> **Instructions as Context.**
+
+| Traditional flow | instr-core |
+| --- | --- |
+| PDF manual → human reading → hand-written code | Structured schema → AI understanding → safely generated code |
+
+---
+
+## Schema Example
+
+An `instr-core` schema is a complete instrument-description file, not just a command list. Below is a simplified structure based on the real registry:
+
+```yaml
+instrument:
+  manufacturer: Keithley
+  model: "2600"
+  description: "Series 2600A System SourceMeter"
+
+global_limits:
+  voltage: {max: 40.0, unit: "V"}
+  current: {max: 3.0, unit: "A"}
+  power: {max: 200.0, unit: "W"}
+
+commands:
+  - command: ":SOUR:VOLT"
+    description: "Set the source voltage level"
+    parameters:
+      - name: "voltage"
+        type: "float"
+    range:
+      min: -40.0
+      max: 40.0
+    requires:
+      source_mode: VOLT
+    forbidden_when:
+      output: ON
+    safety:
+      compliance_required: true
+      compliance_parameter: ":SENS:CURR:PROT"
+    sets_state:
+      ":SOUR:VOLT": "$ARGUMENT"
+```
+
+Key fields:
+
+- `global_limits` — Global safety boundaries (max voltage, current, power).
+- `requires` — Pre-conditions that must be met before the command can execute (e.g., `:SOUR:VOLT` requires `source_mode: VOLT`).
+- `forbidden_when` — States that prohibit execution (e.g., changing source value while `output: ON`).
+- `safety` — Safety rules, such as whether compliance must be set first.
+- `sets_state` — **The heart of the state-tracking engine.** It tells the system what state changes after the command runs (e.g., `$ARGUMENT` records the passed-in value). instr-core relies on this field to maintain a virtual instrument state across command sequences, enabling cross-command dependency and conflict checks.
+
+The AI no longer merely "memorizes commands" — it receives **behavioral constraints on the instrument itself**.
+
+---
+
+## Example: Safe IV Sweep
+
+**Without instr-core:**
+
+```python
+smu.write(":SOUR:VOLT 200")   # May exceed instrument range (2600 max 40V)
+smu.write(":OUTP ON")         # No compliance set — DUT may burn from over-current
+```
+
+Potential problems:
+
+- Does not check `global_limits.voltage.max`
+- Enables output without `:SENS:CURR:PROT`, violating `safety.compliance_required`
+- Does not confirm `source_mode` is `VOLT`
+
+**With instr-core:**
+
+The AI first reads the Schema and learns:
+- `:SOUR:VOLT` valid range is `[-40.0, 40.0]`
+- `:OUTP ON` requires compliance keys (`:SENS:CURR:PROT` or `:SENS:VOLT:PROT`) to be present beforehand (defined by `safety.sequence.require_state_keys_present`)
+- `:SOUR:VOLT` is forbidden when `output: ON` (per `forbidden_when`)
+
+It then generates safe code:
+
+```python
+smu.write("*RST")
+smu.write(":OUTP OFF")
+smu.write(":SOUR:FUNC VOLT")          # Satisfies requires.source_mode
+smu.write(":SENS:CURR:PROT 0.01")     # Set compliance first (10mA)
+smu.write(":SOUR:VOLT:RANG 20")
+smu.write(":SOUR:VOLT 0")
+smu.write(":OUTP ON")
+# ... sweep logic, each step within [-40, 40]
+smu.write(":OUTP OFF")                # Schema recommends output OFF after test
+```
+
+---
+
+## Quick Start
+
+### 1. Prerequisites
+
+- [uv](https://docs.astral.sh/uv/) for Python package and environment management
+
+### 2. Install & Run
+
+```bash
+# Clone the repository
+git clone <repo-url>
+cd instr-core
+
+# Run directly with uv
+uv run instr-core
+
+# Or install into the active environment
+uv pip install -e .
+instr-core
+```
+
+You can also use the `mcp` CLI to install directly into **Claude Desktop**:
+
+```bash
+# Install into Claude Desktop (requires Claude Desktop app)
+uv run mcp install src/instr_core/main.py
+
+# Or with a custom registry path via environment variable
+INSTR_CORE_REGISTRY=/absolute/path/to/registry uv run mcp install src/instr_core/main.py
+
+# Develop / test with MCP Inspector
+uv run mcp dev src/instr_core/main.py
+```
+
+### 3. Configure your IDE / AI Assistant
+
+> **Note:** When configuring in an IDE, the working directory may not be the project root. Use an **absolute path** for the registry, or set the `INSTR_CORE_REGISTRY` environment variable.
+
+**Claude Desktop** — edit the config file:
+
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "instr-core": {
+      "command": "uv",
+      "args": ["run", "--cwd", "/absolute/path/to/instr-core", "instr-core"]
+    }
+  }
+}
+```
+
+Or, if `uv` is not on the system `PATH` inside Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "instr-core": {
+      "command": "uv",
+      "args": [
+        "run",
+        "instr-core"
+      ],
+      "env": {
+        "PATH": "/path/to/your/env/bin"
+      }
+    }
+  }
+}
+```
+
+**Cursor** — add to `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "instr-core": {
+      "command": "uv",
+      "args": ["run", "--cwd", "/absolute/path/to/instr-core", "instr-core"]
+    }
+  }
+}
+```
+
+**Claude Code** — add to `.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "instr-core": {
+      "command": "uv",
+      "args": ["run", "--cwd", "/absolute/path/to/instr-core", "instr-core"]
+    }
+  }
+}
+```
+
+### 4. What happens next
+
+After configuration, the AI assistant gains access to instrument-aware tools. Here is what a typical session looks like:
+
+**You type in the AI chat:**
+
+> Write a Python script to run an IV sweep on a Keithley 2600, 0-20V, 10mA compliance.
+
+**Without instr-core**, the AI generates:
+
+```python
+# AI hallucinated output — looks plausible, potentially destructive
+smu = visa.ResourceManager().open_resource("USB0::0x05E6::0x2600::INSTR")
+smu.write(":SOUR:FUNC VOLT")
+smu.write(":SOUR:VOLT 20")          # No range check
+smu.write(":OUTP ON")                # No compliance set — DUT at risk
+```
+
+**With instr-core**, the AI first queries the schema and generates:
+
+```python
+# Schema-informed output — constraints applied
+smu = visa.ResourceManager().open_resource("USB0::0x05E6::0x2600::INSTR")
+smu.write(":SOUR:FUNC VOLT")
+smu.write(":SENS:CURR:PROT 0.01")    # Compliance from schema: 10mA
+smu.write(":SOUR:VOLT:RANG 20")      # Explicit range declaration
+smu.write(":SOUR:VOLT 0")            # Start from safe state
+smu.write(":OUTP ON")
+# ... sweep logic with schema-aware voltage steps
+smu.write(":OUTP OFF")               # Schema requires output off at end
+```
+
+The AI also surfaces a validation summary:
+
+> **instr-core validation passed**
+> - Compliance: 10mA set
+> - Voltage range: 0-20V (within instrument limit)
+> - Output state: OFF before sweep, OFF after sweep
+> - Source mode: VOLT (matches requirement)
+
+---
+
+## Core Features
+
+- **Standardized instrument schema** — structured YAML / JSON in place of PDF manuals.
+- **Safety validation layer** — prevents out-of-range values, illegal state transitions, dangerous outputs, and invalid mode combinations.
+- **Native MCP support** — compatible with Cursor, Claude Code, Windsurf, and VSCode AI agents.
+- **Python runtime core** — built on the official [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) (FastMCP), easy to extend and integrate with existing Python instrument-control workflows.
+- **Community instrument registry** — Keithley, Keysight, Tektronix, Rohde & Schwarz, NI PXI, and other SCPI instruments.
+
+---
+
+## Project Philosophy
+
+`instr-core` is **not**:
+
+- A SCPI autocomplete tool
+- A PDF-to-YAML converter
+- An autonomous control system
+
+It **is**:
+
+> **A validation and context layer for AI-driven hardware control.**
+
+The goal is not to replace engineers, but to **make AI-generated hardware code safer, more verifiable, and more traceable**.
+
+---
+
+## Safety Statement
+
+**Human review is always required before executing on real hardware.**
+
+`instr-core` provides:
+
+- Constraint validation
+- State checking
+- Command semantics
+- Risk reduction
+
+It **does not guarantee**:
+
+- That the generated code is correct
+- That the instrument is safe
+- That hardware will not be damaged
+
+---
+
+## Registry Layout
+
+```text
+tests/fixtures/registry/
+└── keithley/
+    └── smu/
+        └── 2600.yaml
+```
+
+Each schema may contain:
+
+- Firmware version
+- SCPI command tree
+- Parameter constraints
+- State-machine rules
+- Safety limits
+- Authoritative documentation source
+
+---
+
+## Roadmap
+
+**Current focus**
+
+- Keithley 2400 / 2600
+- SCPI SourceMeter
+- PyVISA workflows
+- Safe code generation
+
+**Planned**
+
+- Oscilloscope semantic model
+- PXI system support
+- Binary protocols
+- Real-instrument validation
+- Capability graph
+- Automated PDF parsing
+- Hardware execution sandbox
+
+---
+
+## Long-Term Vision
+
+AI is moving from "generating code" to "controlling the physical world". The physical world requires:
+
+- Type systems
+- State verification
+- Safety constraints
+- Traceability
+- Execution semantics
+
+`instr-core` aims to become:
+
+> **A trusted context layer between AI and real hardware.**
+
+---
+
+## Contributing
+
+Contributions welcome:
+
+- Instrument schemas
+- SCPI semantics
+- Safety rules
+- PXI support
+- Protocol adapters
+- Real-instrument testing
+
+---
+
+## License
+
+[MIT](./LICENSE)

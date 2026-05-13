@@ -1,0 +1,121 @@
+instrument:
+  manufacturer: Keithley
+  model: "2600"
+  series: "2600A"
+  category: smu
+  description: "Series 2600A System SourceMeter Instruments"
+  firmware_version: "3.x"
+  doc_source: "Keithley 2600A Reference Manual"
+
+global_limits:
+  voltage: {max: 40.0, unit: "V"}
+  current: {max: 3.0, unit: "A"}
+  power: {max: 200.0, unit: "W"}
+
+commands:
+  - command: ":SOUR:FUNC"
+    description: "Set the source function (VOLT or CURR)"
+    parameters:
+      - name: "function"
+        type: "string"
+        allowed_values: ["VOLT", "CURR"]
+    requires:
+      output: OFF
+    sets_state:
+      source_mode: "$ARGUMENT_UPPER"
+
+  - command: ":SOUR:VOLT"
+    description: "Set the source voltage level"
+    parameters:
+      - name: "voltage"
+        type: "float"
+    range:
+      min: -40.0
+      max: 40.0
+    requires:
+      source_mode: VOLT
+    forbidden_when:
+      output: ON
+    safety:
+      compliance_required: true
+      compliance_parameter: ":SENS:CURR:PROT"
+    sets_state:
+      ":SOUR:VOLT": "$ARGUMENT"
+
+  - command: ":SOUR:VOLT:RANG"
+    description: "Set the source voltage range"
+    parameters:
+      - name: "range"
+        type: "float"
+    range:
+      min: 0.0
+      max: 40.0
+    requires:
+      source_mode: VOLT
+
+  - command: ":SOUR:CURR"
+    description: "Set the source current level"
+    parameters:
+      - name: "current"
+        type: "float"
+    range:
+      min: -3.0
+      max: 3.0
+    requires:
+      source_mode: CURR
+    forbidden_when:
+      output: ON
+    safety:
+      compliance_required: true
+      compliance_parameter: ":SENS:VOLT:PROT"
+    sets_state:
+      ":SOUR:CURR": "$ARGUMENT"
+
+  - command: ":SENS:CURR:PROT"
+    description: "Set the current compliance (protection) level"
+    parameters:
+      - name: "limit"
+        type: "float"
+    range:
+      min: 0.0
+      max: 3.0
+    sets_state:
+      ":SENS:CURR:PROT": "$ARGUMENT"
+
+  - command: ":SENS:VOLT:PROT"
+    description: "Set the voltage compliance (protection) level"
+    parameters:
+      - name: "limit"
+        type: "float"
+    range:
+      min: 0.0
+      max: 40.0
+    sets_state:
+      ":SENS:VOLT:PROT": "$ARGUMENT"
+
+  - command: ":OUTP"
+    description: "Turn the output ON or OFF"
+    parameters:
+      - name: "state"
+        type: "string"
+        allowed_values: ["ON", "OFF"]
+    sets_state:
+      output: "$ARGUMENT_UPPER"
+    safety:
+      sequence:
+        - before: ":OUTP ON"
+          require_state_keys_present: [":SENS:CURR:PROT", ":SENS:VOLT:PROT"]
+          message: "Compliance must be configured before enabling output"
+        - after: ":OUTP OFF"
+          expect_state:
+            output: "OFF"
+          message: "Output should be turned OFF at end of test"
+
+  - command: ":OUTP:DEL"
+    description: "Set output delay time"
+    parameters:
+      - name: "delay"
+        type: "float"
+    range:
+      min: 0.0
+      max: 10.0

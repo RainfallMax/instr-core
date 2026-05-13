@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+*.egg
+.uv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OMC (oh-my-claudecode) local state
+.omc/
+
+# Claude Code local overrides
+.claude/settings.local.json
+
+# IDE / editors
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log

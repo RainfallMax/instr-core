@@ -1,0 +1,29 @@
+[project]
+name = "instr-core"
+version = "0.2.0"
+description = "Safe, verifiable instrument-control context for AI coding assistants via MCP"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp[cli]>=1.27.1",
+    "pydantic>=2.13.4",
+    "pyyaml>=6.0.3",
+    "requests>=2.32.0",
+]
+
+[project.scripts]
+instr-core = "instr_core.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/instr_core"]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.1.0",
+    "pytest>=9.0.3",
+    "ruff>=0.15.13",
+]
+

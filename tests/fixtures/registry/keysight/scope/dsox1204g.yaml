@@ -1,0 +1,47 @@
+instrument:
+  manufacturer: Keysight
+  model: "DSOX1204G"
+  series: "InfiniiVision 1000 X-Series"
+  category: scope
+  description: "200 MHz, 4-channel oscilloscope (measurement only — no source)"
+  doc_source: "Keysight DSOX1204G User's Guide"
+
+# A scope has no source-current or source-power limit. Only voltage,
+# expressing the maximum permissible probe input. We rely on
+# Optional[LimitDef] to express that current/power are simply absent.
+global_limits:
+  voltage: {max: 300.0, unit: "V"}
+
+commands:
+  - command: ":TIM:SCAL"
+    description: "Set the horizontal time-per-division"
+    parameters:
+      - name: "scale"
+        type: "float"
+    range:
+      min: 1.0e-9
+      max: 50.0
+
+  - command: ":CHAN1:DISP"
+    description: "Show or hide channel 1"
+    parameters:
+      - name: "state"
+        type: "string"
+        allowed_values: ["ON", "OFF"]
+    sets_state:
+      channel1: "$ARGUMENT_UPPER"
+
+  - command: ":TRIG:SOUR"
+    description: "Select the trigger source"
+    parameters:
+      - name: "source"
+        type: "string"
+        allowed_values: ["CHAN1", "CHAN2", "CHAN3", "CHAN4", "EXT", "LINE"]
+    sets_state:
+      trigger_source: "$ARGUMENT_UPPER"
+
+  - command: ":MEAS:VPP?"
+    description: "Query peak-to-peak voltage on the active channel"
+    parameters: []
+    forbidden_when:
+      channel1: OFF
