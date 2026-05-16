@@ -39,11 +39,12 @@ class LimitDef(BaseModel):
 class GlobalLimits(BaseModel):
     """Hard safety limits for the instrument as a whole.
 
-    Limits are keyed by physical quantity (voltage, current, power, etc.).
-    The schema author decides which quantities are relevant for the
-    instrument category; the engine only checks limits that are declared.
+    Limits are keyed by physical quantity (voltage, current, power,
+    frequency, etc.).  The schema author decides which quantities are
+    relevant for the instrument category; the engine only checks limits
+    that are declared.
 
-    All three fields are optional so non-SMU instruments can express
+    All fields are optional so non-SMU instruments can express
     themselves honestly: oscilloscopes typically have no output-power
     limit, DMMs have no source-current limit, spectrum analysers have
     no source-voltage limit. When a field is ``None`` the engine
@@ -54,6 +55,7 @@ class GlobalLimits(BaseModel):
     voltage: LimitDef | None = None
     current: LimitDef | None = None
     power: LimitDef | None = None
+    frequency: LimitDef | None = None
 
 
 class ParameterDef(BaseModel):
@@ -104,6 +106,7 @@ class CommandDef(BaseModel):
     forbidden_when: dict[str, StrOrBool] = Field(default_factory=dict)
     safety: Safety | None = None
     sets_state: dict[str, StrOrBool] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
 
 
 class InstrumentSchema(BaseModel):

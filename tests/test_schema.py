@@ -666,9 +666,8 @@ def test_compliance_required_without_parameter_emits_schema_bug() -> None:
     assert any("Schema bug" in i for i in result.issues), result.issues
 
 
-def test_check_argument_skips_multi_parameter_commands() -> None:
-    """Multi-parameter commands must not trigger a false-positive
-    allowed_values cascade (single arg cannot match every parameter)."""
+def test_check_argument_multi_parameter_all_pass() -> None:
+    """Multi-parameter arg split by comma, each part matched positionally."""
     from instr_core.validator import check_argument
     from instr_core.schema import CommandDef, ParameterDef
 
@@ -677,14 +676,58 @@ def test_check_argument_skips_multi_parameter_commands() -> None:
         parameters=[
             ParameterDef(name="sensor", **{"type": "string"},
                          allowed_values=["TC", "RTD"]),
-            ParameterDef(name="type", **{"type": "string"},
+            ParameterDef(name="tc_type", **{"type": "string"},
+                         allowed_values=["J", "K", "T"]),
+            ParameterDef(name="nplc", **{"type": "float"},
+                         allowed_values=[]),
+        ],
+    )
+    issues: list[str] = []
+    suggestions: list[str] = []
+    check_argument(cmd, "TC, J, 1.0", issues, suggestions)
+    assert issues == [], f"all parts should pass, got: {issues}"
+
+
+def test_check_argument_multi_parameter_with_failure() -> None:
+    """Positional values that don't match allowed_values are flagged."""
+    from instr_core.validator import check_argument
+    from instr_core.schema import CommandDef, ParameterDef
+
+    cmd = CommandDef(
+        command=":CONF:TEMP",
+        parameters=[
+            ParameterDef(name="sensor", **{"type": "string"},
+                         allowed_values=["TC", "RTD"]),
+            ParameterDef(name="tc_type", **{"type": "string"},
                          allowed_values=["J", "K", "T"]),
         ],
     )
     issues: list[str] = []
     suggestions: list[str] = []
-    check_argument(cmd, "TC,J", issues, suggestions)
-    assert issues == [], f"multi-param should be skipped, got: {issues}"
+    check_argument(cmd, "TC,X", issues, suggestions)
+    assert len(issues) == 1
+    assert "X" in issues[0]
+    assert "tc_type" in issues[0]
+
+
+def test_check_argument_multi_parameter_fewer_parts_than_params() -> None:
+    """Trailing parameters with no corresponding arg part are skipped."""
+    from instr_core.validator import check_argument
+    from instr_core.schema import CommandDef, ParameterDef
+
+    cmd = CommandDef(
+        command=":CONF:TEMP",
+        parameters=[
+            ParameterDef(name="sensor", **{"type": "string"},
+                         allowed_values=["TC", "RTD"]),
+            ParameterDef(name="tc_type", **{"type": "string"},
+                         allowed_values=["J", "K", "T"]),
+        ],
+    )
+    issues: list[str] = []
+    suggestions: list[str] = []
+    check_argument(cmd, "TC", issues, suggestions)
+    assert issues == [], f"only first param should be checked, got: {issues}"
 
 
 class TestRegistrySearchByCategory:

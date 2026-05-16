@@ -545,22 +545,23 @@ def check_argument(
 ) -> None:
     """Validate ``arg`` against the command's ``parameters.allowed_values``.
 
-    Currently only single-parameter commands are supported. For
-    multi-parameter commands (e.g. ``:CONF:TEMP TC,J,1``) the raw
-    argument string would have to be split positionally before
-    matching, which the schema does not yet model; emitting an
-    allowed_values mismatch for every parameter against the whole
-    string would be a false-positive cascade, so we skip the check.
+    For single-parameter commands the whole argument is matched against
+    the first parameter. For multi-parameter commands (e.g.
+    ``:CONF:TEMP TC,J,1``) the argument is split on commas and each
+    part is matched positionally against the corresponding parameter.
     """
-    if len(cmd_def.parameters) != 1:
-        return
-    param = cmd_def.parameters[0]
-    if param.allowed_values and not _arg_matches_allowed(arg, param.allowed_values):
-        issues.append(
-            f"Invalid value '{arg}' for parameter '{param.name}'. "
-            f"Allowed: {param.allowed_values}."
-        )
-        suggestions.append(f"Use one of {param.allowed_values} for parameter '{param.name}'.")
+    parts = [p.strip() for p in arg.split(",")]
+    for i, param in enumerate(cmd_def.parameters):
+        if i >= len(parts):
+            break
+        if not param.allowed_values:
+            continue
+        if not _arg_matches_allowed(parts[i], param.allowed_values):
+            issues.append(
+                f"Invalid value '{parts[i]}' for parameter '{param.name}'. "
+                f"Allowed: {param.allowed_values}."
+            )
+            suggestions.append(f"Use one of {param.allowed_values} for parameter '{param.name}'.")
 
 
 def check_global_limits(
@@ -582,6 +583,11 @@ def check_global_limits(
             f"Global limit: {command} value {value} exceeds current max {limits.current.max}."
         )
         suggestions.append(f"Reduce current to <= {limits.current.max} {limits.current.unit}.")
+    if "FREQ" in cmd_upper and limits.frequency is not None and abs(value) > limits.frequency.max:
+        issues.append(
+            f"Global limit: {command} value {value} exceeds frequency max {limits.frequency.max}."
+        )
+        suggestions.append(f"Reduce frequency to <= {limits.frequency.max} {limits.frequency.unit}.")
 
 
 def _check_sequence_rule(rule: SequenceRule, current_state: dict[str, str]) -> bool:

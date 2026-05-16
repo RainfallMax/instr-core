@@ -23,6 +23,7 @@ commands:
       output: OFF
     sets_state:
       source_mode: "$ARGUMENT_UPPER"
+    tags: ["setup", "sweep"]
 
   - command: ":SOUR:VOLT"
     description: "Set the source voltage level"
@@ -41,6 +42,7 @@ commands:
       compliance_parameter: ":SENS:CURR:PROT"
     sets_state:
       ":SOUR:VOLT": "$ARGUMENT"
+    tags: ["sweep", "voltage"]
 
   - command: ":SOUR:VOLT:RANG"
     description: "Set the source voltage range"
@@ -70,6 +72,7 @@ commands:
       compliance_parameter: ":SENS:VOLT:PROT"
     sets_state:
       ":SOUR:CURR": "$ARGUMENT"
+    tags: ["sweep", "current"]
 
   - command: ":SENS:CURR:PROT"
     description: "Set the current compliance (protection) level"
@@ -81,6 +84,7 @@ commands:
       max: 3.0
     sets_state:
       ":SENS:CURR:PROT": "$ARGUMENT"
+    tags: ["setup", "sweep"]
 
   - command: ":SENS:VOLT:PROT"
     description: "Set the voltage compliance (protection) level"
@@ -92,6 +96,7 @@ commands:
       max: 40.0
     sets_state:
       ":SENS:VOLT:PROT": "$ARGUMENT"
+    tags: ["setup", "sweep"]
 
   - command: ":OUTP"
     description: "Turn the output ON or OFF"
@@ -110,6 +115,7 @@ commands:
           expect_state:
             output: "OFF"
           message: "Output should be turned OFF at end of test"
+    tags: ["setup", "sweep"]
 
   - command: ":OUTP:DEL"
     description: "Set output delay time"
@@ -119,3 +125,4 @@ commands:
     range:
       min: 0.0
       max: 10.0
+    tags: ["setup"]

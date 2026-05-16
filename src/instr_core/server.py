@@ -20,7 +20,7 @@ from mcp.types import (
 )
 from pydantic import BaseModel
 
-from .schema import InstrumentSchema
+from .schema import CommandDef, InstrumentSchema
 from .validator import Registry, check_sequence_rules_after, validate_command
 
 
@@ -33,6 +33,54 @@ class SequenceStep(BaseModel):
 
 
 _RESOURCE_PAGE_SIZE = 100
+
+# Keywords mapped to SCPI command substrings for operation-aware SOP filtering.
+# Used as a fallback when no commands carry matching tags.
+_OPERATION_KEYWORDS: dict[str, list[str]] = {
+    "rise_time": ["RIS", "TIM", "MEAS", "TRIG", "ACQ", "CHAN", "DISP"],
+    "fall_time": ["FALL", "TIM", "MEAS", "TRIG", "ACQ", "CHAN", "DISP"],
+    "voltage": ["VOLT", "VPP", "MEAS", "CHAN", "RANG", "DISP"],
+    "current": ["CURR", "MEAS"],
+    "frequency": ["FREQ", "MEAS", "FFT"],
+    "period": ["PER", "TIM", "MEAS"],
+    "sweep": ["SOUR", "VOLT", "CURR", "SWE", "OUTP", "SENS"],
+    "pulse": ["PULS", "WIDT", "MEAS", "TRIG"],
+    "measure": ["MEAS", "CHAN", "TRIG", "ACQ", "TIM"],
+}
+
+
+def _filter_commands(
+    commands: list[CommandDef],
+    operation: str,
+) -> list[CommandDef]:
+    """Filter commands relevant to *operation*.
+
+    Primary filter: commands whose ``tags`` list contains *operation*.
+    Fallback (when no command has any tags, or no tag matches): keyword
+    heuristic based on SCPI command substrings.
+
+    Returns the full list if *operation* is ``"setup"`` (the default).
+    """
+    if operation == "setup":
+        return commands
+
+    # Primary: tag-based filtering.
+    tagged = [c for c in commands if operation in c.tags]
+    if tagged:
+        return tagged
+
+    # If some commands have tags but none match, don't fall through to
+    # the keyword heuristic — the schema author used tags intentionally.
+    any_tagged = any(c.tags for c in commands)
+    if any_tagged:
+        return commands
+
+    # Fallback: keyword heuristic for schemas without tags.
+    keywords = _OPERATION_KEYWORDS.get(operation)
+    if keywords is None:
+        return commands
+
+    return [c for c in commands if any(kw in c.command for kw in keywords)] or commands
 
 
 def _tool_result(text: str, is_error: bool = False) -> CallToolResult:
@@ -51,7 +99,6 @@ def create_server(registry: Registry) -> FastMCP:
             "instruments, 'get_command_tree' to explore SCPI commands, and "
             "'validate_instrument_state' to check command safety before generating code."
         ),
-        version="0.2.0",
     )
 
     def _get_schema(instrument: str) -> InstrumentSchema:
@@ -285,6 +332,8 @@ def create_server(registry: Registry) -> FastMCP:
                 declared.append(("Current", limits.current.max, limits.current.unit))
             if limits.power is not None:
                 declared.append(("Power", limits.power.max, limits.power.unit))
+            if limits.frequency is not None:
+                declared.append(("Frequency", limits.frequency.max, limits.frequency.unit))
             logger.debug(
                 "get_safety_limits: %s declared=%s",
                 instrument,
@@ -343,6 +392,8 @@ def create_server(registry: Registry) -> FastMCP:
             if cmd_def.forbidden_when:
                 forb = "\n".join(f"  {k}={v}" for k, v in cmd_def.forbidden_when.items())
                 details.append(f"Forbidden when:\n{forb}")
+            if cmd_def.tags:
+                details.append(f"Tags: {', '.join(sorted(cmd_def.tags))}")
             if cmd_def.safety is not None:
                 if cmd_def.safety.compliance_required is not None:
                     details.append(f"Compliance required: {cmd_def.safety.compliance_required}")
@@ -419,14 +470,25 @@ def create_server(registry: Registry) -> FastMCP:
 
     @mcp.prompt()
     def get_instrument_sop(instrument: str, operation: str = "setup") -> list[base.Message]:
-        """Return a safe instrument SOP prompt containing the full schema context."""
+        """Return a safe instrument SOP prompt with operation-aware schema context.
+
+        When *operation* matches command tags or falls back to a keyword
+        heuristic, only the matching subset of commands is included.
+        """
         schema = _require_known_instrument(instrument, "generate SOP")
+
+        # Build a filtered command list so the AI gets only what is
+        # relevant for this operation.  Fall back gracefully when the
+        # schema has no tags yet or no command matches.
+        relevant_commands = _filter_commands(schema.commands, operation)
+        filtered = schema.model_dump(by_alias=True, exclude_none=True)
+        filtered["commands"] = [c.model_dump(by_alias=True, exclude_none=True) for c in relevant_commands]
+
+        yaml_text = yaml.dump(filtered, allow_unicode=True, sort_keys=False)
+        n_shown = len(relevant_commands)
+        n_total = len(schema.commands)
+
         limits = schema.global_limits
-        yaml_text = yaml.dump(
-            schema.model_dump(by_alias=True, exclude_none=True),
-            allow_unicode=True,
-            sort_keys=False,
-        )
         declared_limits: list[str] = []
         if limits.voltage is not None:
             declared_limits.append(
@@ -440,6 +502,10 @@ def create_server(registry: Registry) -> FastMCP:
             declared_limits.append(
                 f"- Power: {limits.power.max} {limits.power.unit}"
             )
+        if limits.frequency is not None:
+            declared_limits.append(
+                f"- Frequency: {limits.frequency.max} {limits.frequency.unit}"
+            )
         if declared_limits:
             limits_block = "Global safety limits:\n" + "\n".join(declared_limits) + "\n\n"
         else:
@@ -447,10 +513,19 @@ def create_server(registry: Registry) -> FastMCP:
                 "Global safety limits: none declared by this schema (per-command "
                 "ranges still apply).\n\n"
             )
+
+        filter_note = ""
+        if operation != "setup" and n_shown < n_total:
+            filter_note = (
+                f"(Operation-aware filter: showing {n_shown} of {n_total} commands. "
+                f"Use `get_command_tree` for the full list.)\n"
+            )
+
         return [
             base.UserMessage(
                 f"Generate safe PyVISA code for {schema.instrument.manufacturer} "
                 f"{schema.instrument.model} (operation: {operation}).\n\n"
+                f"{filter_note}"
                 f"Use the following instrument schema as the single source of truth. "
                 f"Respect all safety limits, state requirements, and forbidden conditions:\n\n"
                 f"```yaml\n{yaml_text}\n```\n\n"

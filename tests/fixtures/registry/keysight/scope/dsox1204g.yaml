@@ -11,6 +11,7 @@ instrument:
 # Optional[LimitDef] to express that current/power are simply absent.
 global_limits:
   voltage: {max: 300.0, unit: "V"}
+  frequency: {max: 200.0e6, unit: "Hz"}
 
 commands:
   - command: ":TIM:SCAL"
@@ -21,6 +22,7 @@ commands:
     range:
       min: 1.0e-9
       max: 50.0
+    tags: ["setup", "rise_time", "fall_time", "period", "measure"]
 
   - command: ":CHAN1:DISP"
     description: "Show or hide channel 1"
@@ -30,6 +32,7 @@ commands:
         allowed_values: ["ON", "OFF"]
     sets_state:
       channel1: "$ARGUMENT_UPPER"
+    tags: ["setup", "measure", "voltage"]
 
   - command: ":TRIG:SOUR"
     description: "Select the trigger source"
@@ -39,9 +42,11 @@ commands:
         allowed_values: ["CHAN1", "CHAN2", "CHAN3", "CHAN4", "EXT", "LINE"]
     sets_state:
       trigger_source: "$ARGUMENT_UPPER"
+    tags: ["setup", "rise_time", "fall_time", "measure"]
 
   - command: ":MEAS:VPP?"
     description: "Query peak-to-peak voltage on the active channel"
     parameters: []
     forbidden_when:
       channel1: OFF
+    tags: ["measure", "voltage"]

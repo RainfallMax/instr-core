@@ -200,7 +200,7 @@ class TestMcpLifecycle:
         assert "result" in result
         contents = result["result"]["contents"]
         assert len(contents) == 1
-        text = contents[0]["content"]
+        text = contents[0]["text"]
         assert "Keithley" in text
         assert "2600" in text
 
