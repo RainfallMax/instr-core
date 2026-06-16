@@ -1,0 +1,131 @@
+"""Models for AI experiment-agent planning and execution."""
+
+from __future__ import annotations
+
+from enum import Enum
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+from ..sweep import SweepConfig
+
+
+class ExperimentType(str, Enum):
+    """Supported agent experiment types."""
+
+    IV_SWEEP = "iv_sweep"
+
+
+class AgentPlanMode(str, Enum):
+    """Execution mode for an agent plan."""
+
+    DRY_RUN = "dry_run"
+    EXECUTE = "execute"
+
+
+class AgentRunStatus(str, Enum):
+    """Lifecycle state for an agent run."""
+
+    PLANNED = "planned"
+    DRY_RUN = "dry_run"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class ParsedIvSweepIntent(BaseModel):
+    """Structured fields parsed from a natural-language IV sweep goal."""
+
+    start_voltage: float
+    stop_voltage: float
+    step: float = Field(gt=0)
+    compliance: float = Field(gt=0)
+    delay_ms: int = Field(default=10, ge=0)
+    direction: Literal["UP", "DOWN", "BOTH"] = "UP"
+
+    def to_sweep_config(self) -> SweepConfig:
+        """Convert parsed intent into the existing sweep config model."""
+        return SweepConfig(
+            start_voltage=self.start_voltage,
+            stop_voltage=self.stop_voltage,
+            step=self.step,
+            compliance=self.compliance,
+            delay_ms=self.delay_ms,
+            direction=self.direction,
+        )
+
+
+class AgentPlan(BaseModel):
+    """A structured experiment plan created by the agent layer."""
+
+    plan_id: str
+    experiment_type: ExperimentType = ExperimentType.IV_SWEEP
+    mode: AgentPlanMode = AgentPlanMode.DRY_RUN
+    goal: str
+    instrument_key: str
+    address: str
+    config: SweepConfig
+    commands: list[str]
+    requires_confirmation: bool = True
+
+
+class AgentValidationResult(BaseModel):
+    """Validation result for an agent dry-run."""
+
+    valid: bool
+    issues: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
+    commands: list[str] = Field(default_factory=list)
+    estimated_points: int
+    requires_confirmation: bool = True
+
+
+class AgentRun(BaseModel):
+    """Stored lifecycle state for an agent plan/run."""
+
+    run_id: str
+    plan: AgentPlan
+    validation: AgentValidationResult | None = None
+    status: AgentRunStatus = AgentRunStatus.PLANNED
+    sweep_session_id: str | None = None
+    error_message: str | None = None
+
+
+class AgentPlanRequest(BaseModel):
+    """Request to create an agent plan from natural language."""
+
+    goal: str
+    instrument_key: str | None = None
+    address: str | None = None
+
+
+class AgentPlanResponse(BaseModel):
+    """Response containing a planned agent run."""
+
+    run: AgentRun
+
+
+class AgentDryRunRequest(BaseModel):
+    """Request to dry-run an existing plan."""
+
+    run_id: str
+
+
+class AgentDryRunResponse(BaseModel):
+    """Response containing dry-run validation."""
+
+    run: AgentRun
+
+
+class AgentExecuteRequest(BaseModel):
+    """Request to execute a validated plan."""
+
+    run_id: str
+    confirm: bool = False
+
+
+class AgentExecuteResponse(BaseModel):
+    """Response after starting execution."""
+
+    run: AgentRun
