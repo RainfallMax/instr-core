@@ -1,0 +1,120 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from ...agent import (
+    AgentDryRunRequest,
+    AgentDryRunResponse,
+    AgentExecuteRequest,
+    AgentExecuteResponse,
+    AgentParseError,
+    AgentPlanRequest,
+    AgentPlanResponse,
+    AgentRunStatus,
+)
+from ...agent.planner import create_iv_sweep_run, dry_run_plan, ensure_executable
+from ...agent.store import AgentRunStore
+from ...sweep import SweepSession, SweepStatus
+from ..dependencies import _get_address_schema, get_agent_store, get_registry, get_sweep_engine
+from ..services.visa_service import get_visa
+
+router = APIRouter(prefix="/agent", tags=["agent"])
+
+
+@router.post("/plan", response_model=AgentPlanResponse)
+def create_plan(
+    req: AgentPlanRequest,
+    request: Request,
+    registry=Depends(get_registry),
+    store: AgentRunStore = Depends(get_agent_store),
+) -> AgentPlanResponse:
+    """Create an IV sweep agent plan from natural language."""
+    address = req.address
+    if address is None:
+        raise HTTPException(status_code=400, detail="address is required for IV sweep planning")
+
+    instrument_key = req.instrument_key or _get_address_schema(request, address)
+    if instrument_key is None:
+        raise HTTPException(
+            status_code=400,
+            detail="address is not connected to a known instrument schema",
+        )
+    if registry.try_get_schema(instrument_key) is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Instrument '{instrument_key}' not found in registry",
+        )
+
+    try:
+        run = create_iv_sweep_run(req.goal, instrument_key, address)
+    except AgentParseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    store.create(run)
+    return AgentPlanResponse(run=run)
+
+
+@router.post("/dry-run", response_model=AgentDryRunResponse)
+def dry_run(
+    req: AgentDryRunRequest,
+    registry=Depends(get_registry),
+    store: AgentRunStore = Depends(get_agent_store),
+) -> AgentDryRunResponse:
+    """Validate an agent plan without touching VISA."""
+    run = store.get(req.run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{req.run_id}' not found")
+    run = dry_run_plan(run, registry)
+    store.update(run)
+    return AgentDryRunResponse(run=run)
+
+
+@router.post("/execute", response_model=AgentExecuteResponse)
+def execute(
+    req: AgentExecuteRequest,
+    store: AgentRunStore = Depends(get_agent_store),
+    registry=Depends(get_registry),
+    sweep_engine=Depends(get_sweep_engine),
+) -> AgentExecuteResponse:
+    """Execute a validated agent plan after explicit confirmation."""
+    run = store.get(req.run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{req.run_id}' not found")
+
+    try:
+        ensure_executable(run, req.confirm)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        visa_resource = get_visa().open_resource(run.plan.address)
+        session = SweepSession(
+            session_id=f"swp-{run.run_id.removeprefix('run-')}",
+            instrument_key=run.plan.instrument_key,
+            address=run.plan.address,
+            config=run.plan.config,
+            status=SweepStatus.IDLE,
+        )
+        sweep_engine.start_sweep(session, registry, visa_resource)
+    except Exception as exc:
+        run.status = AgentRunStatus.FAILED
+        run.error_message = str(exc)
+        store.update(run)
+        raise HTTPException(status_code=500, detail=f"Execution failed: {exc}") from exc
+
+    run.status = AgentRunStatus.RUNNING
+    run.sweep_session_id = session.session_id
+    store.update(run)
+    return AgentExecuteResponse(run=run)
+
+
+@router.get("/runs/{run_id}", response_model=AgentPlanResponse)
+def get_run(
+    run_id: str,
+    store: AgentRunStore = Depends(get_agent_store),
+) -> AgentPlanResponse:
+    """Return a stored agent run."""
+    run = store.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    return AgentPlanResponse(run=run)

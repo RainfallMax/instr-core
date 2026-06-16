@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import Request
 
+from ..agent.store import AgentRunStore
 from ..sweep import SweepEngine
 from ..validator import Registry
 
@@ -24,6 +25,8 @@ def init_app_state(app) -> None:
 
     app.state.sweep_engine = SweepEngine()
     logger.info("SweepEngine initialized")
+    app.state.agent_store = AgentRunStore()
+    logger.info("AgentRunStore initialized")
     app.state.address_lock = threading.RLock()
     app.state.address_to_schema = {}
     app.state.address_state = {}
@@ -40,6 +43,11 @@ def get_registry(request: Request) -> Registry:
 def get_sweep_engine(request: Request) -> SweepEngine:
     """FastAPI dependency: get the sweep engine."""
     return request.app.state.sweep_engine
+
+
+def get_agent_store(request: Request) -> AgentRunStore:
+    """FastAPI dependency: get the agent run store."""
+    return request.app.state.agent_store
 
 
 def _load_registry_paths() -> list[str]:
