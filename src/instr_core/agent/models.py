@@ -14,6 +14,7 @@ class ExperimentType(str, Enum):
     """Supported agent experiment types."""
 
     IV_SWEEP = "iv_sweep"
+    DUAL_KEITHLEY_SWEEP = "dual_keithley_sweep"
 
 
 class AgentPlanMode(str, Enum):
@@ -90,6 +91,7 @@ class AgentRun(BaseModel):
     status: AgentRunStatus = AgentRunStatus.PLANNED
     sweep_session_id: str | None = None
     error_message: str | None = None
+    result: "DualSweepResult | None" = None
 
 
 class AgentPlanRequest(BaseModel):
@@ -129,3 +131,99 @@ class AgentExecuteResponse(BaseModel):
     """Response after starting execution."""
 
     run: AgentRun
+
+
+class InstrumentBinding(BaseModel):
+    """Bind an instrument role to an address and schema."""
+
+    address: str
+    instrument_key: str
+
+
+class MeterConfig(BaseModel):
+    """Configuration for the DMM in a dual-device sweep."""
+
+    function: Literal["VOLT:DC"] = "VOLT:DC"
+    range: float = Field(gt=0)
+
+
+class DualKeithleyPlan(BaseModel):
+    """Plan for a software-synchronized Keithley 2600 + DMM6500 sweep."""
+
+    plan_id: str
+    experiment_type: ExperimentType = ExperimentType.DUAL_KEITHLEY_SWEEP
+    mode: AgentPlanMode = AgentPlanMode.DRY_RUN
+    goal: str
+    source: InstrumentBinding
+    meter: InstrumentBinding
+    source_config: SweepConfig
+    meter_config: MeterConfig
+    commands: dict[str, list[str]]
+    requires_confirmation: bool = True
+
+
+class DualSweepPoint(BaseModel):
+    """One source/meter data point from a dual-device sweep."""
+
+    source_voltage: float
+    meter_value: float
+    timestamp: str
+
+
+class DualSweepSummary(BaseModel):
+    """Summary statistics for a dual-device sweep."""
+
+    points: int
+    min: float | None = None
+    max: float | None = None
+    mean: float | None = None
+
+
+class DualSweepResult(BaseModel):
+    """In-memory result for a dual-device sweep run."""
+
+    points: list[DualSweepPoint] = Field(default_factory=list)
+    summary: DualSweepSummary
+
+
+class DualKeithleyRun(BaseModel):
+    """Stored lifecycle state for a dual-device agent run."""
+
+    run_id: str
+    plan: DualKeithleyPlan
+    validation: AgentValidationResult | None = None
+    status: AgentRunStatus = AgentRunStatus.PLANNED
+    error_message: str | None = None
+    result: DualSweepResult | None = None
+
+
+class DualKeithleyPlanRequest(BaseModel):
+    """Request to plan a dual Keithley software-synchronized sweep."""
+
+    goal: str
+    source: InstrumentBinding
+    meter: InstrumentBinding
+    source_config: SweepConfig
+    meter_config: MeterConfig
+
+
+class DualKeithleyPlanResponse(BaseModel):
+    """Response containing a dual-device run."""
+
+    run: DualKeithleyRun
+
+
+class DualKeithleyDryRunRequest(BaseModel):
+    """Request to dry-run a dual-device run."""
+
+    run_id: str
+
+
+class DualKeithleyExecuteRequest(BaseModel):
+    """Request to execute a dual-device run."""
+
+    run_id: str
+    confirm: bool = False
+
+
+AgentRun.model_rebuild()

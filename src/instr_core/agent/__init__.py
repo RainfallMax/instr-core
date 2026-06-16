@@ -11,6 +11,12 @@ from .models import (
     AgentRun,
     AgentRunStatus,
     AgentValidationResult,
+    DualKeithleyDryRunRequest,
+    DualKeithleyExecuteRequest,
+    DualKeithleyPlanRequest,
+    DualKeithleyPlanResponse,
+    DualKeithleyRun,
+    DualSweepResult,
 )
 from .parser import AgentParseError, parse_iv_sweep_goal
 
@@ -26,5 +32,11 @@ __all__ = [
     "AgentRun",
     "AgentRunStatus",
     "AgentValidationResult",
+    "DualKeithleyDryRunRequest",
+    "DualKeithleyExecuteRequest",
+    "DualKeithleyPlanRequest",
+    "DualKeithleyPlanResponse",
+    "DualKeithleyRun",
+    "DualSweepResult",
     "parse_iv_sweep_goal",
 ]

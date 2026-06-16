@@ -11,8 +11,21 @@ from ...agent import (
     AgentPlanRequest,
     AgentPlanResponse,
     AgentRunStatus,
+    DualKeithleyDryRunRequest,
+    DualKeithleyExecuteRequest,
+    DualKeithleyPlanRequest,
+    DualKeithleyPlanResponse,
+    DualKeithleyRun,
 )
-from ...agent.planner import create_iv_sweep_run, dry_run_plan, ensure_executable
+from ...agent.planner import (
+    create_dual_keithley_run,
+    create_iv_sweep_run,
+    dry_run_dual_keithley_plan,
+    dry_run_plan,
+    ensure_dual_executable,
+    ensure_executable,
+    execute_dual_keithley_run,
+)
 from ...agent.store import AgentRunStore
 from ...sweep import SweepSession, SweepStatus
 from ..dependencies import _get_address_schema, get_agent_store, get_registry, get_sweep_engine
@@ -118,3 +131,89 @@ def get_run(
     if run is None:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
     return AgentPlanResponse(run=run)
+
+
+@router.post("/multi/plan", response_model=DualKeithleyPlanResponse)
+def create_multi_plan(
+    req: DualKeithleyPlanRequest,
+    registry=Depends(get_registry),
+    store: AgentRunStore = Depends(get_agent_store),
+) -> DualKeithleyPlanResponse:
+    """Create a dual Keithley software-synchronized sweep plan."""
+    if registry.try_get_schema(req.source.instrument_key) is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Source instrument '{req.source.instrument_key}' not found",
+        )
+    if registry.try_get_schema(req.meter.instrument_key) is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Meter instrument '{req.meter.instrument_key}' not found",
+        )
+    run = create_dual_keithley_run(
+        req.goal,
+        req.source,
+        req.meter,
+        req.source_config,
+        req.meter_config,
+    )
+    store.create(run)
+    return DualKeithleyPlanResponse(run=run)
+
+
+@router.post("/multi/dry-run", response_model=DualKeithleyPlanResponse)
+def dry_run_multi(
+    req: DualKeithleyDryRunRequest,
+    registry=Depends(get_registry),
+    store: AgentRunStore = Depends(get_agent_store),
+) -> DualKeithleyPlanResponse:
+    """Validate a dual-device plan without touching VISA."""
+    run = store.get(req.run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{req.run_id}' not found")
+    if not isinstance(run, DualKeithleyRun):
+        raise HTTPException(status_code=400, detail=f"Run '{req.run_id}' is not a multi run")
+    run = dry_run_dual_keithley_plan(run, registry)
+    store.update(run)
+    return DualKeithleyPlanResponse(run=run)
+
+
+@router.post("/multi/execute", response_model=DualKeithleyPlanResponse)
+def execute_multi(
+    req: DualKeithleyExecuteRequest,
+    store: AgentRunStore = Depends(get_agent_store),
+) -> DualKeithleyPlanResponse:
+    """Execute a confirmed dual-device software-synchronized sweep."""
+    run = store.get(req.run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{req.run_id}' not found")
+    if not isinstance(run, DualKeithleyRun):
+        raise HTTPException(status_code=400, detail=f"Run '{req.run_id}' is not a multi run")
+    try:
+        ensure_dual_executable(run, req.confirm)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        run = execute_dual_keithley_run(run, get_visa())
+    except Exception as exc:
+        run.status = AgentRunStatus.FAILED
+        run.error_message = str(exc)
+        store.update(run)
+        raise HTTPException(status_code=500, detail=f"Execution failed: {exc}") from exc
+    store.update(run)
+    return DualKeithleyPlanResponse(run=run)
+
+
+@router.get("/multi/runs/{run_id}", response_model=DualKeithleyPlanResponse)
+def get_multi_run(
+    run_id: str,
+    store: AgentRunStore = Depends(get_agent_store),
+) -> DualKeithleyPlanResponse:
+    """Return a stored dual-device run."""
+    run = store.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    if not isinstance(run, DualKeithleyRun):
+        raise HTTPException(status_code=400, detail=f"Run '{run_id}' is not a multi run")
+    return DualKeithleyPlanResponse(run=run)
