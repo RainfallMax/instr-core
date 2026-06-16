@@ -1,0 +1,92 @@
+from __future__ import annotations
+
+import logging
+import threading
+from pathlib import Path
+
+from fastapi import Request
+
+from ..sweep import SweepEngine
+from ..validator import Registry
+
+logger = logging.getLogger("instr_core.api")
+
+
+def init_app_state(app) -> None:
+    """Initialize application state (registry, sweep engine, address tracking)."""
+    paths = _load_registry_paths()
+    if paths:
+        app.state.registry = Registry.load(*paths)
+        logger.info("Registry loaded from %s (%d instruments)", paths, len(app.state.registry))
+    else:
+        logger.warning("No registry paths configured; instrument schemas unavailable.")
+        app.state.registry = None
+
+    app.state.sweep_engine = SweepEngine()
+    logger.info("SweepEngine initialized")
+    app.state.address_lock = threading.RLock()
+    app.state.address_to_schema = {}
+    app.state.address_state = {}
+
+
+def get_registry(request: Request) -> Registry:
+    """FastAPI dependency: get the instrument registry."""
+    registry = request.app.state.registry
+    if registry is None:
+        raise RuntimeError("Registry not loaded")
+    return registry
+
+
+def get_sweep_engine(request: Request) -> SweepEngine:
+    """FastAPI dependency: get the sweep engine."""
+    return request.app.state.sweep_engine
+
+
+def _load_registry_paths() -> list[str]:
+    """Load registry paths from environment or default."""
+    import os
+
+    env = os.environ.get("INSTR_CORE_REGISTRY", "")
+    if env:
+        return [p.strip() for p in env.replace(",", os.pathsep).split(os.pathsep) if p.strip()]
+    project_root = Path(__file__).resolve().parents[3]
+    default = project_root / "tests" / "fixtures" / "registry"
+    if default.exists():
+        return [str(default)]
+    return []
+
+
+# Address schema helpers
+
+
+def _set_address_schema(request: Request, address: str, schema_key: str | None) -> None:
+    with request.app.state.address_lock:
+        request.app.state.address_to_schema[address] = schema_key
+
+
+def _get_address_schema(request: Request, address: str) -> str | None:
+    with request.app.state.address_lock:
+        return request.app.state.address_to_schema.get(address)
+
+
+def _get_all_address_schemas(request: Request) -> dict[str, str | None]:
+    with request.app.state.address_lock:
+        return dict(request.app.state.address_to_schema)
+
+
+def _set_address_state(request: Request, address: str, state: dict[str, str]) -> None:
+    with request.app.state.address_lock:
+        request.app.state.address_state[address] = state
+
+
+def _get_address_state(request: Request, address: str) -> dict[str, str] | None:
+    with request.app.state.address_lock:
+        s = request.app.state.address_state.get(address)
+        return dict(s) if s is not None else None
+
+
+def _update_address_state_entry(request: Request, address: str, key: str, value: str) -> None:
+    with request.app.state.address_lock:
+        if address not in request.app.state.address_state:
+            request.app.state.address_state[address] = {}
+        request.app.state.address_state[address][key] = value

@@ -61,32 +61,30 @@ AI 不知道一台只能承受 10V 的精密设备，如果被写入了 `SOUR:VO
 
 ## 架构
 
+`instr-core` 有两套运行时界面，共享同一个 Python 验证引擎：
+
+### 1. MCP Server（AI 工作流）
 ```mermaid
 flowchart TD
     subgraph IDE["AI 编程助手"]
         A["Claude / Cursor / GPT"]
     end
 
-    subgraph CORE["instr-core"]
-        B["MCP Server"]
+    subgraph CORE["instr-core Python"]
+        B["MCP Server (stdio)"]
         C["验证引擎"]
         D["安全约束"]
     end
 
-    subgraph REG["仪器 Registry"]
+    subgraph REG["Instrument Registry"]
         E["YAML / JSON Schema"]
         F["状态机规则"]
         G["安全限制"]
     end
 
-    subgraph HW["物理仪器"]
-        H["VISA / SCPI / PXI"]
-    end
-
     A -->|"MCP 协议"| B
     B --> C
     C --> D
-    D -->|"已验证指令"| H
     E --> C
     F --> C
     G --> D
@@ -94,8 +92,46 @@ flowchart TD
     style IDE fill:#1e1e2e,stroke:#89b4fa,color:#cdd6f4
     style CORE fill:#1e1e2e,stroke:#a6e3a1,color:#cdd6f4
     style REG fill:#1e1e2e,stroke:#f9e2af,color:#cdd6f4
+```
+
+### 2. 桌面应用（人工 + AI 工作流）
+```mermaid
+flowchart TD
+    subgraph DESKTOP["Tauri 桌面端"]
+        UI["React UI"]
+        RUST["Rust 壳层\n窗口 / 菜单 / IPC"]
+    end
+
+    subgraph PYTHON["Python 后端"]
+        API["FastAPI (HTTP)"]
+        MCP["MCP Server (stdio)"]
+        ENG["验证引擎"]
+        VISA["PyVISA"]
+    end
+
+    subgraph REG["Instrument Registry"]
+        E["YAML Schema"]
+    end
+
+    subgraph HW["物理仪器"]
+        H["VISA / SCPI / PXI"]
+    end
+
+    UI <--> |"HTTP / localhost:8765"| API
+    RUST --> |"启动子进程"| PYTHON
+    API --> ENG
+    MCP --> ENG
+    ENG --> VISA
+    VISA --> |"SCPI"| HW
+    E --> ENG
+
+    style DESKTOP fill:#1e1e2e,stroke:#89b4fa,color:#cdd6f4
+    style PYTHON fill:#1e1e2e,stroke:#a6e3a1,color:#cdd6f4
+    style REG fill:#1e1e2e,stroke:#f9e2af,color:#cdd6f4
     style HW fill:#1e1e2e,stroke:#f38ba8,color:#cdd6f4
 ```
+
+桌面应用同时承载两套工作流：用户可以通过 React UI 手动控制仪器，而同一 Python 后端继续通过 MCP 为 AI 助手提供服务。
 
 ---
 
@@ -213,26 +249,51 @@ smu.write(":OUTP OFF")                # Schema 建议测试结束后关闭输出
 
 ## 快速开始
 
-### 1. 前置要求
+### 前置要求
 
 - [uv](https://docs.astral.sh/uv/) 用于 Python 包和环境管理
+- [Node.js](https://nodejs.org/) (>= 20) 用于桌面 UI
+- [Rust](https://rustup.rs/) (>= 1.75) 用于 Tauri 壳层
 
-### 2. 安装与运行
+### 1. 安装与运行（仅 MCP Server）
 
 ```bash
 # 克隆仓库
 git clone <repo-url>
 cd instr-core
 
-# 直接使用 uv 运行
-uv run instr-core
+# 同步 Python 依赖
+uv sync
 
-# 或安装到当前环境
-uv pip install -e .
-instr-core
+# 运行 MCP server
+uv run instr-core
 ```
 
-也可以使用 `mcp` CLI 直接安装到 **Claude Desktop**：
+### 2. 桌面应用（Tauri + React + Python）
+
+桌面应用提供现代化的原生 UI 用于仪器控制，同时保留相同的 Python 后端和 MCP 服务。
+
+```bash
+# 1. 启动 Python API 后端
+uv run python src/instr_core/api_server.py
+
+# 2. 在第二个终端启动 Tauri 开发环境
+cd desktop
+npm install
+cargo tauri dev
+```
+
+桌面窗口会在 `http://localhost:1420` 打开，通过 `http://localhost:8765` 与 Python 后端通信。
+
+**生产构建：**
+
+```bash
+cd desktop
+cargo tauri build
+# 输出：desktop/src-tauri/target/release/bundle/
+```
+
+### 3. 配置你的 IDE / AI 助手（MCP）
 
 ```bash
 # 安装到 Claude Desktop（需要已安装 Claude Desktop 应用）
@@ -359,6 +420,7 @@ AI 还会输出验证摘要：
 - **原生 MCP 支持** — 兼容 Cursor、Claude Code、Windsurf、VSCode AI Agent。
 - **Python 核心运行时** — 基于官方 [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) (FastMCP)，易于扩展，可无缝集成现有 Python 仪器控制工作流。
 - **社区仪器 Registry** — 支持 Keithley、Keysight、Tektronix、Rohde & Schwarz、NI PXI 以及更多 SCPI 仪器。
+- **桌面应用**（Tauri + React + Python）— 现代化的原生 UI，支持仪器发现、SCPI 终端和手动控制。打包为单文件可执行程序。
 
 ---
 
@@ -397,6 +459,71 @@ AI 还会输出验证摘要：
 
 ---
 
+## 桌面应用
+
+`instr-core` 包含一个可选的原生桌面应用，基于 **Tauri**（Rust 壳层）+ **React**（UI）+ **Python**（后端）。
+
+### 为什么需要桌面应用？
+
+MCP Server 非常适合 AI 辅助编程，但工程师也需要一个独立工具来完成：
+- 快速扫描 VISA 资源并连接仪器
+- 手动发送 SCPI 指令并获得实时验证反馈
+- 在可浏览的 UI 中查看仪器 Schema 和安全限制
+- 无需编写 Python 脚本即可运行 IV sweep 和捕获数据
+
+### 架构
+
+```
+┌─────────────────────────────┐
+│  Tauri (Rust + Web UI)      │  ← 用户面对的原生窗口
+│  - React 仪器面板           │
+│  - SCPI 终端                │
+│  - 数据可视化               │
+└──────┬──────────────────────┘
+       │ HTTP / WebSocket (localhost)
+       ▼
+┌─────────────────────────────┐
+│  Python 后端                │  ← 与 MCP 工作流共享
+│  - FastAPI 本地服务         │
+│  - PyVISA 仪器通信          │
+│  - MCP Server（给 AI 用）   │
+│  - 验证引擎                 │
+└─────────────────────────────┘
+```
+
+Rust 壳层（`desktop/src-tauri/`）在启动时自动拉起 Python 后端，并在原生窗口中加载 React UI。UI 通过 `localhost:8765` 上的 HTTP 与 Python 通信。
+
+### 通信方式
+
+| 层级 | 技术 | 职责 |
+|---|---|---|
+| 壳层 | Tauri (Rust) | 窗口管理、菜单栏、原生对话框、进程生命周期 |
+| 前端 | React + Vite | 仪器面板、SCPI 终端、图表、设置 |
+| 传输 | HTTP / REST | React 与 Python 之间的 JSON API |
+| 后端 | FastAPI + uvicorn | 请求路由、VISA 资源管理、验证 |
+| 引擎 | Python（共享） | Schema 解析、指令验证、状态追踪 |
+
+### 文件结构
+
+```text
+desktop/
+├── package.json              # Node 依赖（React、Tauri API）
+├── vite.config.ts            # Vite 开发服务器（端口 1420）
+├── tsconfig.json
+├── index.html
+└── src/
+    ├── main.tsx              # React 入口
+    ├── App.tsx               # 主布局（面板 + 终端）
+    └── App.css               # 暗色主题样式
+└── src-tauri/
+    ├── Cargo.toml            # Rust 依赖（Tauri）
+    ├── tauri.conf.json       # 窗口配置、打包设置
+    ├── build.rs
+    └── src/
+        ├── main.rs           # 启动 Python 后端，管理生命周期
+        └── lib.rs
+```
+
 ## Registry 结构
 
 ```text
@@ -425,6 +552,7 @@ tests/fixtures/registry/
 - SCPI SourceMeter
 - PyVISA 工作流
 - 安全代码生成
+- **Tauri 桌面应用** — 仪器面板、SCPI 终端、数据捕获
 
 **未来计划**
 
@@ -435,6 +563,8 @@ tests/fixtures/registry/
 - Capability Graph
 - 自动 PDF 解析
 - 硬件执行沙箱
+- 数据可视化（绘图、sweep、测量）
+- 多仪器同步序列
 
 ---
 

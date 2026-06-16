@@ -1,0 +1,19 @@
+[package]
+name = "instr-core-desktop"
+version = "0.2.0"
+description = "Tauri desktop app for instr-core"
+authors = ["you"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!
+custom-protocol = ["tauri/custom-protocol"]

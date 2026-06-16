@@ -61,14 +61,17 @@ The engineer's core value shifts from "operator" to "rule designer" — the AI i
 
 ## Architecture
 
+`instr-core` has **two runtime surfaces** that share the same Python validation engine:
+
+### 1. MCP Server (AI Workflow)
 ```mermaid
 flowchart TD
     subgraph IDE["AI Coding Assistant"]
         A["Claude / Cursor / GPT"]
     end
 
-    subgraph CORE["instr-core"]
-        B["MCP Server"]
+    subgraph CORE["instr-core Python"]
+        B["MCP Server (stdio)"]
         C["Validation Engine"]
         D["Safety Constraints"]
     end
@@ -79,14 +82,9 @@ flowchart TD
         G["Safety Limits"]
     end
 
-    subgraph HW["Physical Instruments"]
-        H["VISA / SCPI / PXI"]
-    end
-
     A -->|"MCP Protocol"| B
     B --> C
     C --> D
-    D -->|"Validated Commands"| H
     E --> C
     F --> C
     G --> D
@@ -94,8 +92,46 @@ flowchart TD
     style IDE fill:#1e1e2e,stroke:#89b4fa,color:#cdd6f4
     style CORE fill:#1e1e2e,stroke:#a6e3a1,color:#cdd6f4
     style REG fill:#1e1e2e,stroke:#f9e2af,color:#cdd6f4
+```
+
+### 2. Desktop App (Human + AI Workflow)
+```mermaid
+flowchart TD
+    subgraph DESKTOP["Tauri Desktop"]
+        UI["React UI"]
+        RUST["Rust Shell\nWindow / Menu / IPC"]
+    end
+
+    subgraph PYTHON["Python Backend"]
+        API["FastAPI (HTTP)"]
+        MCP["MCP Server (stdio)"]
+        ENG["Validation Engine"]
+        VISA["PyVISA"]
+    end
+
+    subgraph REG["Instrument Registry"]
+        E["YAML Schemas"]
+    end
+
+    subgraph HW["Physical Instruments"]
+        H["VISA / SCPI / PXI"]
+    end
+
+    UI <-->|"HTTP / localhost:8765"| API
+    RUST -->|"spawns"| PYTHON
+    API --> ENG
+    MCP --> ENG
+    ENG --> VISA
+    VISA -->|"SCPI"| HW
+    E --> ENG
+
+    style DESKTOP fill:#1e1e2e,stroke:#89b4fa,color:#cdd6f4
+    style PYTHON fill:#1e1e2e,stroke:#a6e3a1,color:#cdd6f4
+    style REG fill:#1e1e2e,stroke:#f9e2af,color:#cdd6f4
     style HW fill:#1e1e2e,stroke:#f38ba8,color:#cdd6f4
 ```
+
+The desktop app bundles both workflows: users can manually control instruments via the React UI while the same Python backend continues to serve AI assistants through MCP.
 
 ---
 
@@ -214,39 +250,51 @@ smu.write(":OUTP OFF")                # Schema recommends output OFF after test
 
 ## Quick Start
 
-### 1. Prerequisites
+### Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) for Python package and environment management
+- [Node.js](https://nodejs.org/) (>= 20) for the desktop UI
+- [Rust](https://rustup.rs/) (>= 1.75) for the Tauri shell
 
-### 2. Install & Run
+### 1. Install & Run (MCP Server only)
 
 ```bash
 # Clone the repository
 git clone <repo-url>
 cd instr-core
 
-# Run directly with uv
-uv run instr-core
+# Sync Python dependencies
+uv sync
 
-# Or install into the active environment
-uv pip install -e .
-instr-core
+# Run the MCP server
+uv run instr-core
 ```
 
-You can also use the `mcp` CLI to install directly into **Claude Desktop**:
+### 2. Desktop App (Tauri + React + Python)
+
+The desktop app provides a modern native UI for instrument control while keeping the same Python backend and MCP server.
 
 ```bash
-# Install into Claude Desktop (requires Claude Desktop app)
-uv run mcp install src/instr_core/main.py
+# 1. Start the Python API backend
+uv run python src/instr_core/api_server.py
 
-# Or with a custom registry path via environment variable
-INSTR_CORE_REGISTRY=/absolute/path/to/registry uv run mcp install src/instr_core/main.py
-
-# Develop / test with MCP Inspector
-uv run mcp dev src/instr_core/main.py
+# 2. In a second terminal, start the Tauri dev environment
+cd desktop
+npm install
+cargo tauri dev
 ```
 
-### 3. Configure your IDE / AI Assistant
+The desktop window will open at `http://localhost:1420`, communicating with the Python backend at `http://localhost:8765`.
+
+**Build for production:**
+
+```bash
+cd desktop
+cargo tauri build
+# Output: desktop/src-tauri/target/release/bundle/
+```
+
+### 3. Configure your IDE / AI Assistant (MCP)
 
 > **Note:** When configuring in an IDE, the working directory may not be the project root. Use an **absolute path** for the registry, or set the `INSTR_CORE_REGISTRY` environment variable.
 
@@ -360,6 +408,7 @@ The AI also surfaces a validation summary:
 - **Native MCP support** — compatible with Cursor, Claude Code, Windsurf, and VSCode AI agents.
 - **Python runtime core** — built on the official [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) (FastMCP), easy to extend and integrate with existing Python instrument-control workflows.
 - **Community instrument registry** — Keithley, Keysight, Tektronix, Rohde & Schwarz, NI PXI, and other SCPI instruments.
+- **Desktop application** (Tauri + React + Python) — modern native UI for instrument discovery, SCPI terminal, and manual control. Ships as a single binary.
 
 ---
 
@@ -398,6 +447,71 @@ It **does not guarantee**:
 
 ---
 
+## Desktop App
+
+`instr-core` ships with an optional native desktop application built on **Tauri** (Rust shell) + **React** (UI) + **Python** (backend).
+
+### Why a desktop app?
+
+The MCP server is great for AI-assisted coding, but engineers also need a standalone tool for:
+- Quickly scanning VISA resources and connecting to instruments
+- Manually sending SCPI commands with real-time validation feedback
+- Viewing instrument schemas and safety limits in a browsable UI
+- Running IV sweeps and capturing data without writing Python scripts
+
+### Architecture
+
+```
+┌─────────────────────────────┐
+│  Tauri (Rust + Web UI)      │  ← User-facing native window
+│  - React instrument panels  │
+│  - SCPI terminal            │
+│  - Data visualization       │
+└──────┬──────────────────────┘
+       │ HTTP / WebSocket (localhost)
+       ▼
+┌─────────────────────────────┐
+│  Python Backend             │  ← Shared with MCP workflow
+│  - FastAPI local service    │
+│  - PyVISA instrument comms  │
+│  - MCP Server (for AI)      │
+│  - Validation Engine        │
+└─────────────────────────────┘
+```
+
+The Rust shell (`desktop/src-tauri/`) spawns the Python backend on startup and opens the React UI in a native window. The UI talks to Python via HTTP on `localhost:8765`.
+
+### Communication
+
+| Layer | Technology | Responsibility |
+|---|---|---|
+| Shell | Tauri (Rust) | Window management, menu bar, native dialogs, process lifecycle |
+| Frontend | React + Vite | Instrument panels, SCPI terminal, charts, settings |
+| Transport | HTTP / REST | JSON API between React and Python |
+| Backend | FastAPI + uvicorn | Request routing, VISA resource management, validation |
+| Engine | Python (shared) | Schema parsing, command validation, state tracking |
+
+### File Layout
+
+```text
+desktop/
+├── package.json              # Node deps (React, Tauri API)
+├── vite.config.ts            # Vite dev server (port 1420)
+├── tsconfig.json
+├── index.html
+└── src/
+    ├── main.tsx              # React entry
+    ├── App.tsx               # Main layout (panels + terminal)
+    └── App.css               # Dark theme styles
+└── src-tauri/
+    ├── Cargo.toml            # Rust deps (Tauri)
+    ├── tauri.conf.json       # Window config, bundle settings
+    ├── build.rs
+    └── src/
+        ├── main.rs           # Spawns Python backend, manages lifecycle
+        └── lib.rs
+```
+
 ## Registry Layout
 
 ```text
@@ -426,6 +540,7 @@ Each schema may contain:
 - SCPI SourceMeter
 - PyVISA workflows
 - Safe code generation
+- **Tauri desktop app** — instrument panels, SCPI terminal, data capture
 
 **Planned**
 
@@ -436,6 +551,8 @@ Each schema may contain:
 - Capability graph
 - Automated PDF parsing
 - Hardware execution sandbox
+- Data visualization (plots, sweeps, measurements)
+- Multi-instrument synchronized sequences
 
 ---
 

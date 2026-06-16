@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import cast
 
 import yaml
 from mcp.server.fastmcp import FastMCP
@@ -18,7 +19,7 @@ from mcp.types import (
     TextContent,
     ToolAnnotations,
 )
-from pydantic import BaseModel
+from pydantic import AnyUrl, BaseModel
 
 from .schema import CommandDef, InstrumentSchema
 from .validator import Registry, check_sequence_rules_after, validate_command
@@ -408,7 +409,7 @@ def create_server(registry: Registry) -> FastMCP:
                         if s.expect_state:
                             attrs += f" expect_state={s.expect_state}"
                         parts.append(f"  {attrs} msg={s.message}")
-                    details.append(f"Sequence rules:\n" + "\n".join(parts))
+                    details.append("Sequence rules:\n" + "\n".join(parts))
             return _tool_result("\n".join(details))
         except Exception as exc:
             logger.error("get_command_detail error: %s", exc)
@@ -686,7 +687,7 @@ def create_server(registry: Registry) -> FastMCP:
             if meta:
                 resources.append(
                     Resource(
-                        uri=f"instr://{key}",
+                        uri=cast(AnyUrl, f"instr://{key}"),
                         name=f"{meta['manufacturer']} {meta['model']}",
                         description=meta.get("description") or None,
                         mimeType="application/x-yaml",
@@ -695,7 +696,7 @@ def create_server(registry: Registry) -> FastMCP:
             else:
                 resources.append(
                     Resource(
-                        uri=f"instr://{key}",
+                        uri=cast(AnyUrl, f"instr://{key}"),
                         name=key,
                         mimeType="application/x-yaml",
                     )

@@ -39,3 +39,16 @@ desktop.ini
 
 # Logs
 *.log
+
+# Node.js / Frontend
+desktop/node_modules/
+desktop/dist/
+desktop/.vite/
+*.tsbuildinfo
+
+# Cargo / Rust
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+
+# Cargo / Rust
+target/

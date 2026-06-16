@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from pathlib import Path
 
@@ -147,6 +148,8 @@ class Registry:
             self._scan_client_cache()
 
     def _scan_client_cache(self) -> None:
+        if self._client is None:
+            return
         cache_dir = self._client.cache_dir
         if not cache_dir.exists():
             return
@@ -358,6 +361,113 @@ class Registry:
     def __contains__(self, key: str) -> bool:
         with self._lock:
             return key in self._index
+
+    def find_schema_by_idn(self, idn_info) -> str | None:
+        """Find the best-matching schema key from parsed IDN info.
+
+        Matching strategy (in order of priority):
+        1. Exact manufacturer + exact model match
+        2. Manufacturer match + model prefix/series match
+           (e.g. model "2602B" should match schema for series "2600")
+        3. Fuzzy manufacturer match + model match
+
+        Args:
+            idn_info: Parsed IDN information (manufacturer, model, etc.).
+
+        Returns:
+            The schema key (e.g. "keithley/smu/2600") or None if no match.
+        """
+        # Import here to avoid circular imports at module load time.
+        from .idn_parser import IDNInfo
+
+        if not isinstance(idn_info, IDNInfo):
+            raise TypeError("idn_info must be an IDNInfo instance")
+
+        idn_mfr = idn_info.manufacturer.lower().strip()
+        idn_model = idn_info.model.strip()
+
+        if not idn_mfr or not idn_model:
+            return None
+
+        # Snapshot under the lock for thread safety.
+        with self._lock:
+            keys = list(self._index.keys())
+
+        def _series_prefix_match(idn_model: str, schema_model: str) -> bool:
+            """Check if two models share a common numeric series prefix.
+
+            Examples:
+                - "2602B" and "2600" share "260" -> True
+                - "DSOX1204G" and "DSOX1204G" share full string -> True
+            """
+            idn_numeric = re.match(r"^(\d+)", idn_model)
+            schema_numeric = re.match(r"^(\d+)", schema_model)
+
+            if idn_numeric and schema_numeric:
+                idn_num = idn_numeric.group(1)
+                schema_num = schema_numeric.group(1)
+                min_len = min(len(idn_num), len(schema_num))
+                for i in range(min_len, 2, -1):
+                    if idn_num[:i] == schema_num[:i]:
+                        return True
+                return False
+
+            return idn_model.startswith(schema_model) or schema_model.startswith(idn_model)
+
+        best_match: str | None = None
+        best_score = 0  # Higher is better
+
+        for key in keys:
+            meta = self.get_metadata(key)
+            if meta is None:
+                continue
+
+            mfr = meta.get("manufacturer", "").lower().strip()
+            model = meta.get("model", "").strip()
+
+            if not mfr or not model:
+                continue
+
+            # --- Manufacturer matching ---
+            mfr_score = 0
+            if idn_mfr == mfr:
+                mfr_score = 3  # Exact match
+            elif idn_mfr in mfr or mfr in idn_mfr:
+                mfr_score = 2  # Partial / substring match
+            else:
+                # Fuzzy: check word overlap
+                idn_words = set(idn_mfr.split())
+                mfr_words = set(mfr.split())
+                if idn_words & mfr_words:
+                    mfr_score = 1
+
+            if mfr_score == 0:
+                continue
+
+            # --- Model matching ---
+            model_score = 0
+            if idn_model == model:
+                model_score = 3  # Exact match
+            elif _series_prefix_match(idn_model, model):
+                model_score = 2  # Series/prefix match
+            elif model.startswith(idn_model):
+                model_score = 1  # Reverse prefix
+
+            if model_score == 0:
+                continue
+
+            # Combined score: weight manufacturer slightly higher than model
+            score = mfr_score * 10 + model_score
+
+            # Prefer higher scores; on tie, prefer shorter keys (more specific).
+            if score > best_score or (
+                score == best_score
+                and (best_match is None or len(key) < len(best_match))
+            ):
+                best_score = score
+                best_match = key
+
+        return best_match
 
 
 class ValidationResult:
