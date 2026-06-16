@@ -7,6 +7,7 @@ import ScpiTerminal from "./components/ScpiTerminal";
 import SchemaBrowser from "./components/SchemaBrowser";
 import CommandDetail from "./components/CommandDetail";
 import IvSweepPanel from "./components/sweep/IvSweepPanel";
+import DualKeithleyPanel from "./components/agent/DualKeithleyPanel";
 import "./App.css";
 
 function App() {
@@ -15,7 +16,7 @@ function App() {
   const [status, setStatus] = useState<string>("checking...");
   const [selectedSchemaKey, setSelectedSchemaKey] = useState<string | null>(null);
   const [selectedCommand, setSelectedCommand] = useState<CommandDef | null>(null);
-  const [activeView, setActiveView] = useState<"main" | "schema" | "sweep">("main");
+  const [activeView, setActiveView] = useState<"main" | "schema" | "sweep" | "dual">("main");
 
   // Health check on mount
   useEffect(() => {
@@ -99,6 +100,12 @@ function App() {
             >
               IV Sweep
             </button>
+            <button
+              className={activeView === "dual" ? "active" : ""}
+              onClick={() => setActiveView("dual")}
+            >
+              Keithley Dual
+            </button>
           </div>
           <span className="status">{status}</span>
         </div>
@@ -129,8 +136,10 @@ function App() {
               onSelectCommand={handleSelectCommand}
             />
           </div>
-        ) : (
+        ) : activeView === "sweep" ? (
           <IvSweepPanel connected={connected} />
+        ) : (
+          <DualKeithleyPanel connected={connected} />
         )}
       </main>
 

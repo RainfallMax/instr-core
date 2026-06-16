@@ -25,7 +25,8 @@ The project has three layers:
 2. **Safety layer** — validates ranges, state transitions, compliance settings, output state, and command order.
 3. **Runtime layer** — exposes the same core through MCP, FastAPI, and a Tauri desktop app.
 
-The first agent workflow is **AI-driven IV sweep**:
+The first agent workflows are **AI-driven IV sweep** and a **dual Keithley
+software-synchronized sweep**:
 
 ```text
 Natural-language goal
@@ -34,6 +35,13 @@ Natural-language goal
   → explicit confirmation
   → PyVISA execution
   → data, CSV, chart, and run summary
+
+Keithley 2600 source + Keithley DMM6500 meter
+  → structured dual-device plan
+  → dry-run validation for both schemas
+  → explicit confirmation
+  → software-synchronized measurement loop
+  → CSV, chart, and run summary
 ```
 
 ---
@@ -108,6 +116,11 @@ Current Agent API endpoints:
 | `POST /agent/dry-run` | Validate the plan, expand command preview, estimate points, and report safety issues. |
 | `POST /agent/execute` | Start the sweep only after valid dry-run and `confirm=true`. |
 | `GET /agent/runs/{run_id}` | Inspect the stored agent run, validation result, and linked sweep session. |
+| `POST /agent/multi/plan` | Create a structured Keithley 2600 + DMM6500 dual-device sweep plan. |
+| `POST /agent/multi/dry-run` | Validate source and meter schemas without opening VISA resources. |
+| `POST /agent/multi/execute` | Execute the software-synchronized dual-device loop after confirmation. |
+| `GET /agent/multi/runs/{run_id}` | Inspect a stored dual-device run and captured result. |
+| `GET /agent/multi/runs/{run_id}/export` | Export dual-device results as CSV. |
 
 The first version uses a deterministic parser rather than an LLM provider. This keeps the hardware boundary testable: future LLM integrations will produce the same structured `AgentPlan` object, not raw SCPI.
 
@@ -427,7 +440,58 @@ curl -X POST http://localhost:8765/agent/execute \
 
 The execute step is intentionally confirmation-gated. Calling it without `confirm=true` returns an error.
 
-### 4. Configure your IDE / AI Assistant (MCP)
+### 4. Dual Keithley Agent: 2600 + DMM6500
+
+The benchmark multi-instrument workflow uses a Keithley 2600 SMU as a voltage
+source and a Keithley DMM6500 as a DC-voltage meter. It is software-synchronized:
+the source steps one bias point, the meter reads one value, and the run records
+`source_voltage`, `meter_value`, and `timestamp`.
+
+```bash
+curl -X POST http://localhost:8765/agent/multi/plan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "goal": "Sweep 0V to 1V in 0.5V steps and measure DUT voltage with DMM6500",
+    "source": {
+      "address": "USB0::SMU::INSTR",
+      "instrument_key": "keithley/smu/2600"
+    },
+    "meter": {
+      "address": "USB0::DMM::INSTR",
+      "instrument_key": "keithley/dmm/dmm6500"
+    },
+    "source_config": {
+      "start_voltage": 0,
+      "stop_voltage": 1,
+      "step": 0.5,
+      "compliance": 0.01,
+      "delay_ms": 0,
+      "direction": "UP"
+    },
+    "meter_config": {
+      "function": "VOLT:DC",
+      "range": 10
+    }
+  }'
+```
+
+Then dry-run and execute the returned `run_id`:
+
+```bash
+curl -X POST http://localhost:8765/agent/multi/dry-run \
+  -H "Content-Type: application/json" \
+  -d '{"run_id": "run-xxxxxxxx"}'
+
+curl -X POST http://localhost:8765/agent/multi/execute \
+  -H "Content-Type: application/json" \
+  -d '{"run_id": "run-xxxxxxxx", "confirm": true}'
+
+curl http://localhost:8765/agent/multi/runs/run-xxxxxxxx/export
+```
+
+The Tauri desktop app exposes the same workflow as the **Keithley Dual** panel.
+
+### 5. Configure your IDE / AI Assistant (MCP)
 
 > **Note:** When configuring in an IDE, the working directory may not be the project root. Use an **absolute path** for the registry, or set the `INSTR_CORE_REGISTRY` environment variable.
 
@@ -537,9 +601,10 @@ The AI also surfaces a validation summary:
 ## Core Features
 
 - **AI experiment agent** — natural-language IV sweep planning, dry-run validation, confirmation-gated execution, and run tracking.
+- **Dual Keithley benchmark workflow** — Keithley 2600 source + DMM6500 meter planning, dry-run validation, confirmed execution, result capture, and CSV export.
 - **Standardized instrument schema** — structured YAML / JSON in place of PDF manuals.
 - **Safety validation layer** — prevents out-of-range values, illegal state transitions, dangerous outputs, and invalid mode combinations.
-- **FastAPI Agent API** — reusable `/agent/plan`, `/agent/dry-run`, `/agent/execute`, and `/agent/runs/{run_id}` endpoints.
+- **FastAPI Agent API** — reusable single-device and multi-device `/agent` endpoints for plan, dry-run, execute, inspect, and export.
 - **Native MCP support** — compatible with Cursor, Claude Code, Windsurf, and VSCode AI agents.
 - **Python runtime core** — built on the official [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) (FastMCP), easy to extend and integrate with existing Python instrument-control workflows.
 - **Community instrument registry** — Keithley, Keysight, Tektronix, Rohde & Schwarz, NI PXI, and other SCPI instruments.
@@ -595,6 +660,7 @@ The MCP server is great for AI-assisted coding, but engineers also need a standa
 - Manually sending SCPI commands with real-time validation feedback
 - Viewing instrument schemas and safety limits in a browsable UI
 - Running IV sweeps and capturing data without writing Python scripts
+- Running the Keithley 2600 + DMM6500 dual-device benchmark workflow from a guided panel
 
 ### Architecture
 
@@ -674,17 +740,17 @@ Each schema may contain:
 **Current focus**
 
 - AI IV sweep agent
-- Keithley 2400 / 2600
+- Keithley 2600 + DMM6500 benchmark workflow
 - SCPI SourceMeter
 - PyVISA workflows
 - Dry-run-first hardware execution
-- **Tauri desktop app** — instrument panels, SCPI terminal, data capture
+- **Tauri desktop app** — instrument panels, SCPI terminal, IV sweep, dual Keithley sweep, and data capture
 
 **Planned**
 
 - LLM-backed structured planning
-- Desktop Agent panel
 - MCP tools for experiment planning and execution
+- Hardware trigger topology and arm/fire/teardown state models
 - Oscilloscope semantic model
 - PXI system support
 - Binary protocols
@@ -692,8 +758,8 @@ Each schema may contain:
 - Capability graph
 - Automated PDF parsing
 - Hardware execution sandbox
-- Data visualization (plots, sweeps, measurements)
-- Multi-instrument synchronized sequences
+- Richer data visualization (plots, sweeps, measurements)
+- Hardware-synchronized multi-instrument sequences
 
 ---
 

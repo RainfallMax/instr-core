@@ -203,3 +203,71 @@ export interface SweepHistoryItem {
   created_at: string;
   completed_at: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Dual Keithley Agent types
+// ---------------------------------------------------------------------------
+
+export interface InstrumentBinding {
+  address: string;
+  instrument_key: string;
+}
+
+export interface MeterConfig {
+  function: "VOLT:DC";
+  range: number;
+}
+
+export interface AgentValidationResult {
+  valid: boolean;
+  issues: string[];
+  warnings: string[];
+  suggestions: string[];
+  commands: string[];
+  estimated_points: number;
+  requires_confirmation: boolean;
+}
+
+export interface DualKeithleyPlan {
+  plan_id: string;
+  experiment_type: "dual_keithley_sweep";
+  mode: "dry_run" | "execute";
+  goal: string;
+  source: InstrumentBinding;
+  meter: InstrumentBinding;
+  source_config: SweepConfig;
+  meter_config: MeterConfig;
+  commands: Record<"source" | "meter", string[]>;
+  requires_confirmation: boolean;
+}
+
+export interface DualSweepPoint {
+  source_voltage: number;
+  meter_value: number;
+  timestamp: string;
+}
+
+export interface DualSweepSummary {
+  points: number;
+  min: number | null;
+  max: number | null;
+  mean: number | null;
+}
+
+export interface DualSweepResult {
+  points: DualSweepPoint[];
+  summary: DualSweepSummary;
+}
+
+export interface DualKeithleyRun {
+  run_id: string;
+  plan: DualKeithleyPlan;
+  validation: AgentValidationResult | null;
+  status: "planned" | "dry_run" | "running" | "completed" | "failed";
+  error_message: string | null;
+  result: DualSweepResult | null;
+}
+
+export interface DualKeithleyPlanResponse {
+  run: DualKeithleyRun;
+}

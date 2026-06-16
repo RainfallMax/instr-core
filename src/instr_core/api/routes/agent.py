@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import csv
+import io
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
 from ...agent import (
     AgentDryRunRequest,
@@ -217,3 +222,39 @@ def get_multi_run(
     if not isinstance(run, DualKeithleyRun):
         raise HTTPException(status_code=400, detail=f"Run '{run_id}' is not a multi run")
     return DualKeithleyPlanResponse(run=run)
+
+
+@router.get("/multi/runs/{run_id}/export")
+def export_multi_run(
+    run_id: str,
+    store: AgentRunStore = Depends(get_agent_store),
+) -> StreamingResponse:
+    """Export a completed dual-device run as CSV."""
+    run = store.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    if not isinstance(run, DualKeithleyRun):
+        raise HTTPException(status_code=400, detail=f"Run '{run_id}' is not a multi run")
+    if run.result is None:
+        raise HTTPException(status_code=400, detail=f"Run '{run_id}' has no result to export")
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Source Voltage(V)", "Meter Value", "Timestamp"])
+    for point in run.result.points:
+        writer.writerow(
+            [
+                f"{point.source_voltage:.6f}",
+                f"{point.meter_value:.6e}",
+                point.timestamp,
+            ]
+        )
+    output.seek(0)
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    filename = f"DualKeithley_{run.plan.source.instrument_key.replace('/', '_')}_{timestamp}.csv"
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode("utf-8")),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )

@@ -239,3 +239,27 @@ def test_multi_agent_execute_records_points_and_turns_output_off(
     assert run["result"]["summary"]["points"] == 3
     assert rm.resources["USB0::SMU::INSTR"].written[-1] == ":OUTP OFF"
     assert rm.resources["USB0::DMM::INSTR"].query_log.count(":READ?") == 3
+
+
+@patch("instr_core.api_server.pyvisa")
+def test_multi_agent_export_returns_csv_after_execution(
+    mock_pyvisa: MagicMock,
+    tmp_path: Path,
+) -> None:
+    mock_pyvisa.ResourceManager.return_value = MultiMockResourceManager()
+    client = make_client(tmp_path)
+    plan_response = client.post("/agent/multi/plan", json=plan_payload())
+    run_id = plan_response.json()["run"]["run_id"]
+    client.post("/agent/multi/dry-run", json={"run_id": run_id})
+    client.post(
+        "/agent/multi/execute",
+        json={"run_id": run_id, "confirm": True},
+    )
+
+    export_response = client.get(f"/agent/multi/runs/{run_id}/export")
+
+    assert export_response.status_code == 200
+    assert export_response.headers["content-type"].startswith("text/csv")
+    assert "attachment;" in export_response.headers["content-disposition"]
+    assert export_response.text.splitlines()[0] == "Source Voltage(V),Meter Value,Timestamp"
+    assert "0.000000,2.500000e+00" in export_response.text

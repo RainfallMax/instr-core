@@ -620,6 +620,193 @@ button.send-blocked:hover {
   font-size: 0.8rem;
 }
 
+/* Dual Keithley agent panel */
+.dual-keithley-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.dual-config,
+.dual-run,
+.dual-results {
+  min-width: 0;
+}
+
+.dual-results {
+  grid-column: 1 / -1;
+}
+
+.dual-config label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  color: #a6adc8;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dual-config input,
+.dual-config select,
+.dual-config textarea {
+  width: 100%;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border: 1px solid #313244;
+  border-radius: 6px;
+  padding: 0.45rem 0.55rem;
+  font-family: "SF Mono", Monaco, monospace;
+  font-size: 0.82rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.dual-config textarea {
+  min-height: 72px;
+  resize: vertical;
+  margin-bottom: 0.8rem;
+  font-family: inherit;
+}
+
+.dual-config input:focus,
+.dual-config select:focus,
+.dual-config textarea:focus {
+  outline: none;
+  border-color: #89b4fa;
+}
+
+.dual-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.dual-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.dual-actions button:nth-child(2) {
+  background: #3f5f4a;
+}
+
+.dual-actions button:nth-child(3) {
+  background: #7a3f4f;
+}
+
+.dual-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.dual-summary span {
+  background: #1e1e2e;
+  border: 1px solid #313244;
+  border-radius: 6px;
+  padding: 0.55rem;
+  color: #cdd6f4;
+  font-family: "SF Mono", Monaco, monospace;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.dual-command-preview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.dual-command-preview h3 {
+  grid-column: 1 / -1;
+  color: #a6e3a1;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dual-command-preview strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #89b4fa;
+  font-size: 0.78rem;
+}
+
+.dual-command-preview pre {
+  min-height: 160px;
+  background: #11111b;
+  border: 1px solid #313244;
+  border-radius: 6px;
+  padding: 0.75rem;
+  color: #f9e2af;
+  font-family: "SF Mono", Monaco, monospace;
+  font-size: 0.76rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dual-chart {
+  background: #11111b;
+  border: 1px solid #313244;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+.dual-chart svg {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+}
+
+.dual-chart line {
+  stroke: #cdd6f4;
+  stroke-width: 1.4;
+}
+
+.dual-chart path {
+  fill: none;
+  stroke: #a6e3a1;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.dual-chart circle {
+  fill: #89b4fa;
+  stroke: #181825;
+  stroke-width: 1;
+}
+
+.dual-chart text {
+  fill: #a6adc8;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dual-chart.empty text {
+  fill: #6c7086;
+}
+
+@media (max-width: 900px) {
+  .dual-keithley-panel,
+  .dual-grid,
+  .dual-command-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .dual-results,
+  .dual-command-preview h3 {
+    grid-column: auto;
+  }
+}
+
 .command-detail-tags {
   display: flex;
   flex-wrap: wrap;
@@ -1335,4 +1522,45 @@ button.send-blocked:hover {
   border-radius: 6px;
   font-size: 0.85rem;
   margin: 0.5rem 0;
+}
+
+@media (max-width: 700px) {
+  .app-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+  }
+
+  .header-left,
+  .header-right {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.55rem;
+    width: 100%;
+  }
+
+  .app-header h1 {
+    white-space: nowrap;
+  }
+
+  .view-toggle {
+    flex-wrap: wrap;
+    overflow: visible;
+    width: 100%;
+  }
+
+  .view-toggle button {
+    flex: 1 1 45%;
+    min-width: 0;
+    padding: 0.45rem 0.4rem;
+  }
+
+  .status {
+    overflow-wrap: anywhere;
+  }
+
+  .app-main {
+    grid-template-columns: 1fr;
+  }
 }
