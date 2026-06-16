@@ -752,6 +752,72 @@ button.send-blocked:hover {
   overflow-wrap: anywhere;
 }
 
+.dual-history {
+  margin-top: 1rem;
+  border-top: 1px solid #313244;
+  padding-top: 1rem;
+}
+
+.dual-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.dual-history-header h3 {
+  color: #a6e3a1;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dual-history-header button {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.75rem;
+}
+
+.dual-history ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  list-style: none;
+}
+
+.dual-history li button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.2rem 0.65rem;
+  width: 100%;
+  background: #1e1e2e;
+  border: 1px solid #313244;
+  text-align: left;
+}
+
+.dual-history li button:hover {
+  border-color: #89b4fa;
+}
+
+.dual-history li span {
+  color: #cdd6f4;
+  font-family: "SF Mono", Monaco, monospace;
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
+.dual-history li small {
+  grid-column: 1 / -1;
+  color: #a6adc8;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.dual-history-empty {
+  color: #6c7086;
+  font-size: 0.82rem;
+}
+
 .dual-chart {
   background: #11111b;
   border: 1px solid #313244;

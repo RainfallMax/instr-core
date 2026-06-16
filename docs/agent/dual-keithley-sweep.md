@@ -16,13 +16,15 @@ This is the recommended stepping stone before hardware trigger coordination.
 - Meter instrument: `keithley/dmm/dmm6500`
 - Experiment type: `dual_keithley_sweep`
 - Synchronization: software loop, not hardware trigger
-- Planning: explicit structured request fields, no LLM parsing yet
+- Planning: explicit structured request fields or optional LLM structured planning
 - Safety: dry-run first, confirmed execution only
-- Output: in-memory points, summary, CSV export, and desktop visualization
+- Output: persisted run record, points, summary, CSV export, and desktop visualization
 
 ## Agent API
 
 ```text
+POST /agent/llm/plan
+GET  /agent/runs
 POST /agent/multi/plan
 POST /agent/multi/dry-run
 POST /agent/multi/execute
@@ -36,10 +38,11 @@ The Tauri desktop app includes a **Keithley Dual** panel that drives this same
 API surface:
 
 - enter or select the 2600 and DMM6500 VISA addresses
+- optionally ask the configured LLM to convert the goal into the structured plan
 - review the generated source and meter command previews
 - run dry-run validation before touching hardware
 - execute only through the confirmation-gated endpoint
-- inspect captured points, summary statistics, chart, and CSV export
+- inspect persisted run records, captured points, summary statistics, chart, and CSV export
 
 ## Safety Rules
 
@@ -52,6 +55,8 @@ API surface:
 - Any execute failure must attempt `:OUTP OFF` on the source instrument.
 - Run results must record every captured point.
 - CSV export requires a completed run result.
+- LLM output must be parsed into `DualKeithleyPlanRequest`; raw SCPI from an LLM is never executed.
+- Creating, dry-running, executing, and exporting runs must update the persisted run record.
 
 ## Future Plan
 
@@ -62,5 +67,5 @@ API surface:
    - trigger edge/polarity validation
    - receiver armed state
    - DAG execution with teardown
-4. Add LLM-backed structured planning that produces the same request model,
-   never raw SCPI.
+4. Add richer LLM planning context for topology, connected instrument discovery,
+   and registry capability summaries.

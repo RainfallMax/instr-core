@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from pathlib import Path
 
 from fastapi import Request
 
+from ..agent.llm import StructuredPlanner, planner_from_env
 from ..agent.store import AgentRunStore
 from ..sweep import SweepEngine
 from ..validator import Registry
@@ -25,8 +27,10 @@ def init_app_state(app) -> None:
 
     app.state.sweep_engine = SweepEngine()
     logger.info("SweepEngine initialized")
-    app.state.agent_store = AgentRunStore()
+    app.state.agent_store = AgentRunStore(run_dir=_load_agent_runs_dir())
     logger.info("AgentRunStore initialized")
+    app.state.llm_planner = planner_from_env()
+    logger.info("LLM structured planner configured: %s", app.state.llm_planner is not None)
     app.state.address_lock = threading.RLock()
     app.state.address_to_schema = {}
     app.state.address_state = {}
@@ -50,10 +54,13 @@ def get_agent_store(request: Request) -> AgentRunStore:
     return request.app.state.agent_store
 
 
+def get_llm_planner(request: Request) -> StructuredPlanner | None:
+    """FastAPI dependency: get the configured structured LLM planner."""
+    return getattr(request.app.state, "llm_planner", None)
+
+
 def _load_registry_paths() -> list[str]:
     """Load registry paths from environment or default."""
-    import os
-
     env = os.environ.get("INSTR_CORE_REGISTRY", "")
     if env:
         return [p.strip() for p in env.replace(",", os.pathsep).split(os.pathsep) if p.strip()]
@@ -62,6 +69,14 @@ def _load_registry_paths() -> list[str]:
     if default.exists():
         return [str(default)]
     return []
+
+
+def _load_agent_runs_dir() -> Path:
+    """Load the agent run persistence directory from environment or default."""
+    env = os.environ.get("INSTR_CORE_RUNS_DIR")
+    if env:
+        return Path(env).expanduser()
+    return Path.home() / ".instr-core" / "runs"
 
 
 # Address schema helpers

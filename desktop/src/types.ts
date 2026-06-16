@@ -271,3 +271,16 @@ export interface DualKeithleyRun {
 export interface DualKeithleyPlanResponse {
   run: DualKeithleyRun;
 }
+
+export interface AgentRunSummary {
+  run_id: string;
+  experiment_type: "iv_sweep" | "dual_keithley_sweep";
+  status: string;
+  goal: string;
+  has_validation: boolean;
+  has_result: boolean;
+}
+
+export interface AgentRunsResponse {
+  runs: AgentRunSummary[];
+}

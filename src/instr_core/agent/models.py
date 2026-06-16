@@ -213,6 +213,13 @@ class DualKeithleyPlanResponse(BaseModel):
     run: DualKeithleyRun
 
 
+class AgentLlmPlanRequest(BaseModel):
+    """Request an LLM-backed structured experiment plan."""
+
+    goal: str
+    experiment_type: Literal["dual_keithley_sweep"] = "dual_keithley_sweep"
+
+
 class DualKeithleyDryRunRequest(BaseModel):
     """Request to dry-run a dual-device run."""
 

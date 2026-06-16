@@ -12,6 +12,7 @@ from ...agent import (
     AgentDryRunResponse,
     AgentExecuteRequest,
     AgentExecuteResponse,
+    AgentLlmPlanRequest,
     AgentParseError,
     AgentPlanRequest,
     AgentPlanResponse,
@@ -33,7 +34,13 @@ from ...agent.planner import (
 )
 from ...agent.store import AgentRunStore
 from ...sweep import SweepSession, SweepStatus
-from ..dependencies import _get_address_schema, get_agent_store, get_registry, get_sweep_engine
+from ..dependencies import (
+    _get_address_schema,
+    get_agent_store,
+    get_llm_planner,
+    get_registry,
+    get_sweep_engine,
+)
 from ..services.visa_service import get_visa
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -126,6 +133,27 @@ def execute(
     return AgentExecuteResponse(run=run)
 
 
+@router.get("/runs")
+def list_runs(
+    store: AgentRunStore = Depends(get_agent_store),
+) -> dict[str, list[dict[str, object]]]:
+    """Return lightweight summaries of stored agent runs."""
+    runs = []
+    for run in store.list():
+        plan = run.plan
+        runs.append(
+            {
+                "run_id": run.run_id,
+                "experiment_type": plan.experiment_type,
+                "status": run.status,
+                "goal": plan.goal,
+                "has_validation": run.validation is not None,
+                "has_result": run.result is not None,
+            }
+        )
+    return {"runs": runs}
+
+
 @router.get("/runs/{run_id}", response_model=AgentPlanResponse)
 def get_run(
     run_id: str,
@@ -136,6 +164,42 @@ def get_run(
     if run is None:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
     return AgentPlanResponse(run=run)
+
+
+@router.post("/llm/plan", response_model=DualKeithleyPlanResponse)
+def create_llm_plan(
+    req: AgentLlmPlanRequest,
+    registry=Depends(get_registry),
+    store: AgentRunStore = Depends(get_agent_store),
+    planner=Depends(get_llm_planner),
+) -> DualKeithleyPlanResponse:
+    """Create a structured plan from an LLM-produced request object."""
+    if planner is None:
+        raise HTTPException(status_code=503, detail="LLM structured planner is not configured")
+    try:
+        structured = planner.plan_dual_keithley(req.goal)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"LLM planning failed: {exc}") from exc
+
+    if registry.try_get_schema(structured.source.instrument_key) is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Source instrument '{structured.source.instrument_key}' not found",
+        )
+    if registry.try_get_schema(structured.meter.instrument_key) is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Meter instrument '{structured.meter.instrument_key}' not found",
+        )
+    run = create_dual_keithley_run(
+        structured.goal,
+        structured.source,
+        structured.meter,
+        structured.source_config,
+        structured.meter_config,
+    )
+    store.create(run)
+    return DualKeithleyPlanResponse(run=run)
 
 
 @router.post("/multi/plan", response_model=DualKeithleyPlanResponse)

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
+from instr_core.agent.models import DualKeithleyPlanRequest
 from instr_core.agent.store import AgentRunStore
 from instr_core.api_server import create_api_app
 from instr_core.sweep import SweepEngine
@@ -263,3 +264,60 @@ def test_multi_agent_export_returns_csv_after_execution(
     assert "attachment;" in export_response.headers["content-disposition"]
     assert export_response.text.splitlines()[0] == "Source Voltage(V),Meter Value,Timestamp"
     assert "0.000000,2.500000e+00" in export_response.text
+
+
+class FakeStructuredPlanner:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def plan_dual_keithley(self, goal: str) -> DualKeithleyPlanRequest:
+        self.calls.append(goal)
+        return DualKeithleyPlanRequest.model_validate(plan_payload() | {"goal": goal})
+
+
+@patch("instr_core.api_server.pyvisa")
+def test_llm_agent_plan_creates_dual_run_without_opening_visa(
+    mock_pyvisa: MagicMock,
+    tmp_path: Path,
+) -> None:
+    rm = MultiMockResourceManager()
+    mock_pyvisa.ResourceManager.return_value = rm
+    client = make_client(tmp_path)
+    client.app.state.llm_planner = FakeStructuredPlanner()
+
+    response = client.post(
+        "/agent/llm/plan",
+        json={
+            "goal": "Use the 2600 to sweep 0 to 1 V and read voltage on DMM6500.",
+            "experiment_type": "dual_keithley_sweep",
+        },
+    )
+
+    assert response.status_code == 200
+    run = response.json()["run"]
+    assert run["status"] == "planned"
+    assert run["plan"]["experiment_type"] == "dual_keithley_sweep"
+    assert run["plan"]["source"]["instrument_key"] == "keithley/smu/2600"
+    assert rm.opened == []
+
+
+@patch("instr_core.api_server.pyvisa")
+def test_agent_runs_lists_recorded_multi_runs(
+    mock_pyvisa: MagicMock,
+    tmp_path: Path,
+) -> None:
+    mock_pyvisa.ResourceManager.return_value = MultiMockResourceManager()
+    client = make_client(tmp_path)
+    plan_response = client.post("/agent/multi/plan", json=plan_payload())
+    run_id = plan_response.json()["run"]["run_id"]
+
+    list_response = client.get("/agent/runs")
+
+    assert list_response.status_code == 200
+    runs = list_response.json()["runs"]
+    assert any(
+        item["run_id"] == run_id
+        and item["experiment_type"] == "dual_keithley_sweep"
+        and item["status"] == "planned"
+        for item in runs
+    )

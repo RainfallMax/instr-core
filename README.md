@@ -115,14 +115,19 @@ Current Agent API endpoints:
 | `POST /agent/plan` | Parse a natural-language IV sweep goal into a structured plan. |
 | `POST /agent/dry-run` | Validate the plan, expand command preview, estimate points, and report safety issues. |
 | `POST /agent/execute` | Start the sweep only after valid dry-run and `confirm=true`. |
+| `GET /agent/runs` | List persisted run records across single-device and multi-device workflows. |
 | `GET /agent/runs/{run_id}` | Inspect the stored agent run, validation result, and linked sweep session. |
+| `POST /agent/llm/plan` | Ask a configured LLM to produce a structured dual-device plan request. |
 | `POST /agent/multi/plan` | Create a structured Keithley 2600 + DMM6500 dual-device sweep plan. |
 | `POST /agent/multi/dry-run` | Validate source and meter schemas without opening VISA resources. |
 | `POST /agent/multi/execute` | Execute the software-synchronized dual-device loop after confirmation. |
 | `GET /agent/multi/runs/{run_id}` | Inspect a stored dual-device run and captured result. |
 | `GET /agent/multi/runs/{run_id}/export` | Export dual-device results as CSV. |
 
-The first version uses a deterministic parser rather than an LLM provider. This keeps the hardware boundary testable: future LLM integrations will produce the same structured `AgentPlan` object, not raw SCPI.
+The single-device IV sweep parser remains deterministic. The dual-device workflow
+also supports an optional LLM planner, but the safety boundary is unchanged: the
+LLM must return a typed `DualKeithleyPlanRequest`, never raw SCPI, and the run
+still requires dry-run validation before execution.
 
 ---
 
@@ -491,7 +496,48 @@ curl http://localhost:8765/agent/multi/runs/run-xxxxxxxx/export
 
 The Tauri desktop app exposes the same workflow as the **Keithley Dual** panel.
 
-### 5. Configure your IDE / AI Assistant (MCP)
+### 5. LLM Structured Planning and Run Records
+
+`/agent/llm/plan` uses an OpenAI-compatible chat completions endpoint when an API
+key is configured. The LLM is constrained to return JSON matching the
+`DualKeithleyPlanRequest` schema. instr-core then creates a normal planned run;
+it does not execute hardware and does not bypass dry-run validation.
+
+```bash
+export INSTR_CORE_LLM_API_KEY="sk-..."
+export INSTR_CORE_LLM_MODEL="gpt-5.5"
+# Optional for OpenAI-compatible local or proxy endpoints:
+export INSTR_CORE_LLM_BASE_URL="https://api.openai.com/v1/chat/completions"
+```
+
+```bash
+curl -X POST http://localhost:8765/agent/llm/plan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "goal": "Use the 2600 to sweep 0 to 1 V in 0.1 V steps and read voltage on DMM6500",
+    "experiment_type": "dual_keithley_sweep"
+  }'
+```
+
+Agent runs are persisted as JSON records. By default they are stored in:
+
+```text
+~/.instr-core/runs/
+```
+
+Override the location for tests, lab machines, or shared workspaces:
+
+```bash
+export INSTR_CORE_RUNS_DIR="/path/to/instr-core-runs"
+```
+
+List recorded runs:
+
+```bash
+curl http://localhost:8765/agent/runs
+```
+
+### 6. Configure your IDE / AI Assistant (MCP)
 
 > **Note:** When configuring in an IDE, the working directory may not be the project root. Use an **absolute path** for the registry, or set the `INSTR_CORE_REGISTRY` environment variable.
 
@@ -601,6 +647,8 @@ The AI also surfaces a validation summary:
 ## Core Features
 
 - **AI experiment agent** — natural-language IV sweep planning, dry-run validation, confirmation-gated execution, and run tracking.
+- **LLM structured planning** — optional OpenAI-compatible planning that produces typed experiment requests, not raw SCPI.
+- **Persistent experiment records** — plan, validation, status, linked sessions, and results are written as JSON run records.
 - **Dual Keithley benchmark workflow** — Keithley 2600 source + DMM6500 meter planning, dry-run validation, confirmed execution, result capture, and CSV export.
 - **Standardized instrument schema** — structured YAML / JSON in place of PDF manuals.
 - **Safety validation layer** — prevents out-of-range values, illegal state transitions, dangerous outputs, and invalid mode combinations.
@@ -741,6 +789,8 @@ Each schema may contain:
 
 - AI IV sweep agent
 - Keithley 2600 + DMM6500 benchmark workflow
+- LLM-backed structured planning
+- Persistent experiment records
 - SCPI SourceMeter
 - PyVISA workflows
 - Dry-run-first hardware execution
@@ -748,7 +798,6 @@ Each schema may contain:
 
 **Planned**
 
-- LLM-backed structured planning
 - MCP tools for experiment planning and execution
 - Hardware trigger topology and arm/fire/teardown state models
 - Oscilloscope semantic model

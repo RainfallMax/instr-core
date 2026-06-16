@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   API_BASE,
+  AgentRunSummary,
+  AgentRunsResponse,
   ConnectedInstrument,
   DualKeithleyPlanResponse,
   DualKeithleyRun,
@@ -121,6 +123,7 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
   const [meterRange, setMeterRange] = useState("10");
   const [direction, setDirection] = useState<SweepConfig["direction"]>("UP");
   const [run, setRun] = useState<DualKeithleyRun | null>(null);
+  const [runs, setRuns] = useState<AgentRunSummary[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -164,6 +167,37 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
     },
   };
 
+  const applyRun = (nextRun: DualKeithleyRun) => {
+    setRun(nextRun);
+    setGoal(nextRun.plan.goal);
+    setSourceAddress(nextRun.plan.source.address);
+    setMeterAddress(nextRun.plan.meter.address);
+    setSourceSchema(nextRun.plan.source.instrument_key);
+    setMeterSchema(nextRun.plan.meter.instrument_key);
+    setStartVoltage(String(nextRun.plan.source_config.start_voltage));
+    setStopVoltage(String(nextRun.plan.source_config.stop_voltage));
+    setStep(String(nextRun.plan.source_config.step));
+    setCompliance(String(nextRun.plan.source_config.compliance));
+    setDelayMs(String(nextRun.plan.source_config.delay_ms));
+    setDirection(nextRun.plan.source_config.direction);
+    setMeterRange(String(nextRun.plan.meter_config.range));
+  };
+
+  const refreshRuns = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/agent/runs`);
+      if (!response.ok) return;
+      const data = (await response.json()) as AgentRunsResponse;
+      setRuns(data.runs.filter((item) => item.experiment_type === "dual_keithley_sweep"));
+    } catch {
+      // History is optional; keep the main workflow usable when unavailable.
+    }
+  };
+
+  useEffect(() => {
+    refreshRuns();
+  }, []);
+
   const requestRun = async (path: string, body: unknown): Promise<DualKeithleyRun> => {
     setBusy(true);
     setError(null);
@@ -179,7 +213,8 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
       if (!response.ok || !data.run) {
         throw new Error(data.detail ?? `Request failed: ${response.status}`);
       }
-      setRun(data.run);
+      applyRun(data.run);
+      await refreshRuns();
       return data.run;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
@@ -191,6 +226,13 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
 
   const handlePlan = async () => {
     await requestRun("/agent/multi/plan", requestBody);
+  };
+
+  const handleAiPlan = async () => {
+    await requestRun("/agent/llm/plan", {
+      goal,
+      experiment_type: "dual_keithley_sweep",
+    });
   };
 
   const handleDryRun = async () => {
@@ -215,6 +257,25 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
   const handleExport = () => {
     if (!run?.result) return;
     window.open(`${API_BASE}/agent/multi/runs/${run.run_id}/export`, "_blank");
+  };
+
+  const handleLoadRun = async (runId: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE}/agent/multi/runs/${runId}`);
+      const data = (await response.json().catch(() => ({}))) as Partial<DualKeithleyPlanResponse> & {
+        detail?: string;
+      };
+      if (!response.ok || !data.run) {
+        throw new Error(data.detail ?? `Load failed: ${response.status}`);
+      }
+      applyRun(data.run);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Load failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -294,6 +355,9 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
           ))}
         </datalist>
         <div className="dual-actions">
+          <button onClick={handleAiPlan} disabled={busy}>
+            AI Plan
+          </button>
           <button onClick={handlePlan} disabled={busy}>
             Plan
           </button>
@@ -342,6 +406,26 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
             <strong>DMM6500</strong>
             <pre>{(run?.plan.commands.meter ?? []).join("\n")}</pre>
           </div>
+        </div>
+        <div className="dual-history">
+          <div className="dual-history-header">
+            <h3>Run Records</h3>
+            <button onClick={refreshRuns} disabled={busy}>
+              Refresh
+            </button>
+          </div>
+          <ul>
+            {runs.slice(0, 8).map((item) => (
+              <li key={item.run_id}>
+                <button onClick={() => handleLoadRun(item.run_id)} disabled={busy}>
+                  <span>{item.run_id}</span>
+                  <span>{item.status}</span>
+                  <small>{item.goal}</small>
+                </button>
+              </li>
+            ))}
+            {runs.length === 0 && <li className="dual-history-empty">No recorded runs</li>}
+          </ul>
         </div>
       </section>
 
