@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { SweepHistoryItem } from "../../types";
 
 interface SweepHistoryProps {
@@ -26,18 +27,19 @@ function getStatusClass(status: string): string {
 }
 
 export default function SweepHistory({ sessions, onSelect }: SweepHistoryProps) {
+  const { t } = useTranslation();
   if (sessions.length === 0) {
     return (
       <div className="sweep-history empty">
-        <h3>Sweep History</h3>
-        <p className="empty-message">No sweep history</p>
+        <h3>{t("sweep.history")}</h3>
+        <p className="empty-message">{t("sweep.noHistory")}</p>
       </div>
     );
   }
 
   return (
     <div className="sweep-history">
-      <h3>Sweep History</h3>
+      <h3>{t("sweep.history")}</h3>
       <ul className="history-list">
         {sessions.map((session) => (
           <li
@@ -52,7 +54,7 @@ export default function SweepHistory({ sessions, onSelect }: SweepHistoryProps) 
               </span>
             </div>
             <div className="history-meta">
-              <span>{session.points_count} points</span>
+              <span>{t("common.points")}: {session.points_count}</span>
               <span className="history-time">{formatDate(session.created_at)}</span>
             </div>
           </li>

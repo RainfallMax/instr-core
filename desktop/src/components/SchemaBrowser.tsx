@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { API_BASE, InstrumentSchema, SchemaBrowserProps } from "../types";
 import SchemaCommandTree from "./SchemaCommandTree";
 import SafetyLimitsPanel from "./SafetyLimitsPanel";
 
 export default function SchemaBrowser({ schemaKey, onSelectCommand }: SchemaBrowserProps) {
+  const { t } = useTranslation();
   const [schema, setSchema] = useState<InstrumentSchema | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +31,7 @@ export default function SchemaBrowser({ schemaKey, onSelectCommand }: SchemaBrow
         setSchema(data);
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : "Failed to load schema");
+        setError(err instanceof Error ? err.message : t("schema.loadFailed"));
       })
       .finally(() => {
         setLoading(false);
@@ -39,7 +41,7 @@ export default function SchemaBrowser({ schemaKey, onSelectCommand }: SchemaBrow
   if (!schemaKey) {
     return (
       <div className="schema-browser empty">
-        <p className="empty-message">Select an instrument schema to browse</p>
+        <p className="empty-message">{t("schema.select")}</p>
       </div>
     );
   }
@@ -47,7 +49,7 @@ export default function SchemaBrowser({ schemaKey, onSelectCommand }: SchemaBrow
   if (loading) {
     return (
       <div className="schema-browser loading">
-        <p className="loading-message">Loading schema...</p>
+        <p className="loading-message">{t("schema.loading")}</p>
       </div>
     );
   }
@@ -55,7 +57,7 @@ export default function SchemaBrowser({ schemaKey, onSelectCommand }: SchemaBrow
   if (error) {
     return (
       <div className="schema-browser error">
-        <p className="error-message">Error: {error}</p>
+        <p className="error-message">{t("common.error")}: {error}</p>
       </div>
     );
   }
@@ -78,21 +80,21 @@ export default function SchemaBrowser({ schemaKey, onSelectCommand }: SchemaBrow
         <div className="schema-meta">
           {instrument.firmware_version && (
             <span className="meta-item">
-              Firmware: {instrument.firmware_version}
+              {t("schema.firmware")}: {instrument.firmware_version}
             </span>
           )}
           {instrument.series && (
-            <span className="meta-item">Series: {instrument.series}</span>
+            <span className="meta-item">{t("schema.series")}: {instrument.series}</span>
           )}
           {instrument.category && (
-            <span className="meta-item">Category: {instrument.category}</span>
+            <span className="meta-item">{t("schema.category")}: {instrument.category}</span>
           )}
         </div>
       </div>
 
       <div className="schema-sections">
         <section className="schema-section">
-          <h3 className="section-title">Command Tree</h3>
+          <h3 className="section-title">{t("schema.commandTree")}</h3>
           <SchemaCommandTree
             commands={commands}
             onSelectCommand={(cmd) => onSelectCommand?.(cmd)}
@@ -100,7 +102,7 @@ export default function SchemaBrowser({ schemaKey, onSelectCommand }: SchemaBrow
         </section>
 
         <section className="schema-section">
-          <h3 className="section-title">Safety Limits</h3>
+          <h3 className="section-title">{t("schema.safetyLimits")}</h3>
           <SafetyLimitsPanel limits={global_limits} />
         </section>
       </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import {
   API_BASE,
   ConnectedInstrument,
@@ -11,12 +12,14 @@ import SweepConfigForm from "./SweepConfigForm";
 import SweepChart from "./SweepChart";
 import SweepDataTable from "./SweepDataTable";
 import SweepHistory from "./SweepHistory";
+import { Button } from "../ui/Button";
 
 interface IvSweepPanelProps {
   connected: ConnectedInstrument[];
 }
 
 export default function IvSweepPanel({ connected }: IvSweepPanelProps) {
+  const { t } = useTranslation();
   const [config, setConfig] = useState<SweepConfig>({
     start_voltage: 0,
     stop_voltage: 10,
@@ -70,7 +73,7 @@ export default function IvSweepPanel({ connected }: IvSweepPanelProps) {
       try {
         const since = receivedCountRef.current;
         const res = await fetch(`${API_BASE}/sweep/${sweepId}/status?since_index=${since}`);
-        if (!res.ok) throw new Error("Failed to fetch status");
+        if (!res.ok) throw new Error(t("sweep.fetchStatusFailed"));
         const data: SweepStatusResponse = await res.json();
 
         // 增量追加（后端只返回新点）
@@ -86,7 +89,7 @@ export default function IvSweepPanel({ connected }: IvSweepPanelProps) {
           setError(data.error_message);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Polling error");
+        setError(err instanceof Error ? err.message : t("sweep.pollingError"));
       }
     }, 200);
 
@@ -114,7 +117,7 @@ export default function IvSweepPanel({ connected }: IvSweepPanelProps) {
     setError(null);
     const inst = getSelectedInstrument();
     if (!inst) {
-      setError("No instrument selected. Please connect an instrument with a schema.");
+      setError(t("sweep.noInstrument"));
       return;
     }
 
@@ -141,7 +144,7 @@ export default function IvSweepPanel({ connected }: IvSweepPanelProps) {
       receivedCountRef.current = 0;  // 重置
       setProgress({ current: 0, total: data.total_points });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Start failed");
+      setError(err instanceof Error ? err.message : t("sweep.startFailed"));
       setStatus("error");
     }
   };
@@ -152,11 +155,11 @@ export default function IvSweepPanel({ connected }: IvSweepPanelProps) {
       const res = await fetch(`${API_BASE}/sweep/${sweepId}/stop`, {
         method: "POST",
       });
-      if (!res.ok) throw new Error("Stop failed");
+      if (!res.ok) throw new Error(t("sweep.stopFailed"));
       const data = await res.json();
       setStatus(data.status as typeof status);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Stop failed");
+      setError(err instanceof Error ? err.message : t("sweep.stopFailed"));
     }
   };
 
@@ -205,9 +208,9 @@ export default function IvSweepPanel({ connected }: IvSweepPanelProps) {
         <SweepChart points={points} direction={config.direction} />
         <SweepDataTable points={points} />
         <div className="sweep-actions">
-          <button onClick={handleExport} disabled={!sweepId}>
-            Export CSV
-          </button>
+          <Button onClick={handleExport} disabled={!sweepId} variant="outline">
+            {t("sweep.exportCsv")}
+          </Button>
         </div>
       </div>
     </div>

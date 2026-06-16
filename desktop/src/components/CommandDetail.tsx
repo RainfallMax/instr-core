@@ -1,6 +1,9 @@
+import { useTranslation } from "react-i18next";
 import { CommandDetailProps } from "../types";
+import { Button } from "./ui/Button";
 
 export default function CommandDetail({ command, onClose }: CommandDetailProps) {
+  const { t } = useTranslation();
   const hasParameters = command.parameters && command.parameters.length > 0;
   const hasRange = command.range != null;
   const hasRequires = command.requires && Object.keys(command.requires).length > 0;
@@ -19,9 +22,9 @@ export default function CommandDetail({ command, onClose }: CommandDetailProps) 
         {/* Header */}
         <div className="command-detail-header">
           <h3 className="command-detail-title">{command.command}</h3>
-          <button className="command-detail-close" onClick={onClose} aria-label="Close">
+          <Button className="command-detail-close" onClick={onClose} aria-label={t("schema.close")} variant="ghost" size="sm">
             ×
-          </button>
+          </Button>
         </div>
 
         {/* Description */}
@@ -32,7 +35,7 @@ export default function CommandDetail({ command, onClose }: CommandDetailProps) 
         {/* Parameters */}
         {hasParameters && (
           <div className="command-detail-section">
-            <h4 className="section-heading">Parameters</h4>
+            <h4 className="section-heading">{t("schema.parameters")}</h4>
             <ul className="section-list">
               {command.parameters!.map((param) => (
                 <li key={param.name} className="section-list-item">
@@ -53,7 +56,7 @@ export default function CommandDetail({ command, onClose }: CommandDetailProps) 
         {/* Range */}
         {hasRange && (
           <div className="command-detail-section">
-            <h4 className="section-heading">Range</h4>
+            <h4 className="section-heading">{t("schema.range")}</h4>
             <span className="range-value">
               [{command.range!.min}, {command.range!.max}]
             </span>
@@ -63,7 +66,7 @@ export default function CommandDetail({ command, onClose }: CommandDetailProps) 
         {/* Requires */}
         {hasRequires && (
           <div className="command-detail-section">
-            <h4 className="section-heading">Requires</h4>
+            <h4 className="section-heading">{t("schema.requires")}</h4>
             <ul className="section-list">
               {Object.entries(command.requires!).map(([key, value]) => (
                 <li key={key} className="section-list-item">
@@ -80,7 +83,7 @@ export default function CommandDetail({ command, onClose }: CommandDetailProps) 
         {/* Forbidden when */}
         {hasForbidden && (
           <div className="command-detail-section">
-            <h4 className="section-heading">Forbidden when</h4>
+            <h4 className="section-heading">{t("schema.forbiddenWhen")}</h4>
             <ul className="section-list">
               {Object.entries(command.forbidden_when!).map(([key, value]) => (
                 <li key={key} className="section-list-item">
@@ -97,12 +100,12 @@ export default function CommandDetail({ command, onClose }: CommandDetailProps) 
         {/* Safety */}
         {hasSafety && (
           <div className="command-detail-section">
-            <h4 className="section-heading">Safety</h4>
+            <h4 className="section-heading">{t("schema.safety")}</h4>
             <ul className="section-list">
               {command.safety!.compliance_required != null && (
                 <li className="section-list-item">
                   <span className="bullet">•</span>
-                  <span>Compliance required:</span>
+                  <span>{t("schema.complianceRequired")}</span>
                   <span className={command.safety!.compliance_required ? "value-true" : "value-false"}>
                     {command.safety!.compliance_required ? "true" : "false"}
                   </span>
@@ -111,14 +114,14 @@ export default function CommandDetail({ command, onClose }: CommandDetailProps) 
               {command.safety!.compliance_parameter && (
                 <li className="section-list-item">
                   <span className="bullet">•</span>
-                  <span>Compliance parameter:</span>
+                  <span>{t("schema.complianceParameter")}</span>
                   <code>{command.safety!.compliance_parameter}</code>
                 </li>
               )}
               {command.safety!.sequence && command.safety!.sequence.length > 0 && (
                 <li className="section-list-item sequence-item">
                   <span className="bullet">•</span>
-                  <span>Sequence rules:</span>
+                  <span>{t("schema.sequenceRules")}</span>
                   <ul className="sequence-list">
                     {command.safety!.sequence.map((rule, idx) => (
                       <li key={idx} className="sequence-rule">
@@ -163,7 +166,7 @@ export default function CommandDetail({ command, onClose }: CommandDetailProps) 
         {/* Sets state */}
         {hasSetsState && (
           <div className="command-detail-section">
-            <h4 className="section-heading">Sets state</h4>
+            <h4 className="section-heading">{t("schema.setsState")}</h4>
             <ul className="section-list">
               {Object.entries(command.sets_state!).map(([key, value]) => (
                 <li key={key} className="section-list-item">

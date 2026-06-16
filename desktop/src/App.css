@@ -88,6 +88,114 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.ui-button-md {
+  min-height: 32px;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+.ui-button-sm {
+  min-height: 28px;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.78rem;
+}
+
+.ui-button-default {
+  background: #45475a;
+  color: #cdd6f4;
+  border-color: #585b70;
+}
+
+.ui-button-default:hover {
+  background: #585b70;
+}
+
+.ui-button-secondary {
+  background: #3f5f4a;
+  color: #d7f8d0;
+  border-color: rgba(166, 227, 161, 0.35);
+}
+
+.ui-button-outline {
+  background: transparent;
+  color: #cdd6f4;
+  border-color: #45475a;
+}
+
+.ui-button-outline:hover {
+  background: #313244;
+}
+
+.ui-button-destructive {
+  background: #7a3f4f;
+  color: #ffe4ea;
+  border-color: rgba(243, 139, 168, 0.45);
+}
+
+.ui-button-destructive:hover {
+  background: #8f485c;
+}
+
+.ui-button-ghost {
+  background: transparent;
+  color: #cdd6f4;
+}
+
+.ui-button:focus-visible,
+.language-select:focus-visible {
+  outline: 2px solid #89b4fa;
+  outline-offset: 2px;
+}
+
+.ui-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ui-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.ui-card-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #a6e3a1;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+}
+
+.ui-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.language-select {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border: 1px solid #313244;
+  border-radius: 6px;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.8rem;
+}
+
 .list {
   list-style: none;
   margin-top: 0.5rem;
@@ -823,6 +931,7 @@ button.send-blocked:hover {
   border: 1px solid #313244;
   border-radius: 6px;
   margin-bottom: 1rem;
+  height: 320px;
 }
 
 .dual-chart svg {
@@ -858,6 +967,11 @@ button.send-blocked:hover {
 
 .dual-chart.empty text {
   fill: #6c7086;
+}
+
+.echarts-panel {
+  min-height: 300px;
+  width: 100%;
 }
 
 @media (max-width: 900px) {

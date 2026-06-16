@@ -1,5 +1,7 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { SweepConfig } from "../../types";
+import { Button } from "../ui/Button";
 
 interface SweepConfigFormProps {
   config: SweepConfig;
@@ -22,6 +24,7 @@ export default function SweepConfigForm({
   canStart,
   progress,
 }: SweepConfigFormProps) {
+  const { t } = useTranslation();
   const handleChange = (field: keyof SweepConfig, rawValue: string | number) => {
     let value: string | number = rawValue;
     // Guard against NaN from empty/invalid numeric inputs
@@ -44,10 +47,10 @@ export default function SweepConfigForm({
 
   return (
     <div className="sweep-config-form">
-      <h3>Sweep Configuration</h3>
+      <h3>{t("sweep.config")}</h3>
       <div className="form-fields">
         <label>
-          <span>Start Voltage (V)</span>
+          <span>{t("sweep.startVoltage")}</span>
           <input
             type="number"
             step="0.1"
@@ -57,7 +60,7 @@ export default function SweepConfigForm({
           />
         </label>
         <label>
-          <span>Stop Voltage (V)</span>
+          <span>{t("sweep.stopVoltage")}</span>
           <input
             type="number"
             step="0.1"
@@ -67,7 +70,7 @@ export default function SweepConfigForm({
           />
         </label>
         <label>
-          <span>Step (V)</span>
+          <span>{t("sweep.step")}</span>
           <input
             type="number"
             step="0.01"
@@ -77,7 +80,7 @@ export default function SweepConfigForm({
           />
         </label>
         <label>
-          <span>Compliance (A)</span>
+          <span>{t("sweep.compliance")}</span>
           <input
             type="number"
             step="0.001"
@@ -87,7 +90,7 @@ export default function SweepConfigForm({
           />
         </label>
         <label>
-          <span>Delay (ms)</span>
+          <span>{t("sweep.delay")}</span>
           <input
             type="number"
             step="1"
@@ -97,7 +100,7 @@ export default function SweepConfigForm({
           />
         </label>
         <label>
-          <span>Direction</span>
+          <span>{t("sweep.direction")}</span>
           <select
             value={config.direction}
             onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange("direction", e.target.value)}
@@ -111,25 +114,25 @@ export default function SweepConfigForm({
       </div>
 
       <div className="form-actions">
-        <button
+        <Button
           className="start-button"
           onClick={onStart}
           disabled={!canStartSweep}
         >
-          Start Sweep
-        </button>
-        <button
+          {t("sweep.start")}
+        </Button>
+        <Button
           className="stop-button"
           onClick={onStop}
           disabled={!isRunning}
         >
-          Stop
-        </button>
+          {t("sweep.stop")}
+        </Button>
       </div>
 
       {isRunning && progress && (
         <div className="sweep-progress">
-          <span>Scanning: {progress.current}/{progress.total} points</span>
+          <span>{t("sweep.scanning", { current: progress.current, total: progress.total })}</span>
           <div className="progress-bar">
             <div
               className="progress-fill"

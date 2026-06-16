@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   API_BASE,
   CommandResponse,
   ScpiTerminalProps,
   ValidateResponse,
 } from "../types";
+import { Button } from "./ui/Button";
 
 export default function ScpiTerminal({
   selectedInstrument,
   connected,
   onSelectInstrument,
 }: ScpiTerminalProps) {
+  const { t } = useTranslation();
   const [command, setCommand] = useState<string>("");
   const [commandResult, setCommandResult] = useState<CommandResponse | null>(null);
   const [validationResult, setValidationResult] = useState<ValidateResponse | null>(null);
@@ -100,7 +103,7 @@ export default function ScpiTerminal({
 
   return (
     <section className="panel terminal">
-      <h2>SCPI Terminal</h2>
+      <h2>{t("terminal.title")}</h2>
       <div className="terminal-input">
         <select
           value={selectedInstrument}
@@ -110,7 +113,7 @@ export default function ScpiTerminal({
             setValidationResult(null);
           }}
         >
-          <option value="">Select instrument...</option>
+          <option value="">{t("terminal.select")}</option>
           {connected.map((inst) => (
             <option key={inst.address} value={inst.address}>
               {inst.manufacturer} {inst.model} ({inst.address})
@@ -122,26 +125,26 @@ export default function ScpiTerminal({
           value={command}
           onChange={handleCommandChange}
           onKeyDown={(e) => e.key === "Enter" && sendCommand()}
-          placeholder="Enter SCPI command (e.g. :SOUR:VOLT 10) — validation runs automatically"
+          placeholder={t("terminal.placeholder")}
         />
-        <button
+        <Button
           onClick={sendCommand}
           disabled={!selectedInstrument || !command}
           className={validationResult && !validationResult.valid ? "send-blocked" : ""}
         >
-          Send
-        </button>
+          {t("terminal.send")}
+        </Button>
       </div>
 
       {/* Validation Result */}
       {validationResult && selectedSchemaKey && (
         <div className={`validation-result ${validationResult.valid ? "pass" : "fail"}`}>
           <div className="validation-header">
-            {validationResult.valid ? "✓ VALID" : "✗ BLOCKED"}
+            {validationResult.valid ? `✓ ${t("terminal.valid")}` : `✗ ${t("terminal.blocked")}`}
           </div>
           {validationResult.issues.length > 0 && (
             <div className="validation-issues">
-              <strong>Issues:</strong>
+              <strong>{t("terminal.issues")}</strong>
               <ul>
                 {validationResult.issues.map((issue, i) => (
                   <li key={i}>{issue}</li>
@@ -151,7 +154,7 @@ export default function ScpiTerminal({
           )}
           {validationResult.suggestions.length > 0 && (
             <div className="validation-suggestions">
-              <strong>Suggestions:</strong>
+              <strong>{t("terminal.suggestions")}</strong>
               <ul>
                 {validationResult.suggestions.map((s, i) => (
                   <li key={i}>{s}</li>
@@ -162,7 +165,7 @@ export default function ScpiTerminal({
         </div>
       )}
 
-      {isValidating && <div className="validation-loading">Validating...</div>}
+      {isValidating && <div className="validation-loading">{t("terminal.validating")}</div>}
 
       {commandResult && (
         <div className="terminal-output">
@@ -180,7 +183,7 @@ export default function ScpiTerminal({
           )}
           {commandResult.validation_issues.length > 0 && (
             <div className="validation-warnings">
-              <strong>Validation issues:</strong>
+              <strong>{t("terminal.validationIssues")}</strong>
               <ul>
                 {commandResult.validation_issues.map((issue, i) => (
                   <li key={i}>{issue}</li>

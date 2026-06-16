@@ -1,7 +1,11 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { API_BASE, InstrumentMeta, SchemaListPanelProps } from "../types";
+import { Button } from "./ui/Button";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/Card";
 
 export default function SchemaListPanel({ onSelectSchema }: SchemaListPanelProps) {
+  const { t } = useTranslation();
   const [instruments, setInstruments] = useState<InstrumentMeta[]>([]);
 
   const loadInstruments = async () => {
@@ -11,9 +15,12 @@ export default function SchemaListPanel({ onSelectSchema }: SchemaListPanelProps
   };
 
   return (
-    <section className="panel">
-      <h2>Instrument Schemas</h2>
-      <button onClick={loadInstruments}>Load Registry</button>
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("panels.schemas")}</CardTitle>
+      </CardHeader>
+      <CardContent>
+      <Button onClick={loadInstruments}>{t("panels.loadRegistry")}</Button>
       <ul className="list">
         {instruments.map((inst) => (
           <li
@@ -30,6 +37,7 @@ export default function SchemaListPanel({ onSelectSchema }: SchemaListPanelProps
           </li>
         ))}
       </ul>
-    </section>
+      </CardContent>
+    </Card>
   );
 }

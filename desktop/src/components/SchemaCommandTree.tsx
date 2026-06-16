@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { CommandDef } from "../types";
 
 interface SchemaCommandTreeProps {
@@ -33,6 +34,7 @@ function truncateDescription(desc: string | undefined, maxLength: number = 60): 
 }
 
 export default function SchemaCommandTree({ commands, onSelectCommand }: SchemaCommandTreeProps) {
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   const filteredCommands = useMemo(() => {
@@ -58,11 +60,11 @@ export default function SchemaCommandTree({ commands, onSelectCommand }: SchemaC
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search commands..."
+          placeholder={t("schema.search")}
           className="search-input"
         />
         <span className="command-count">
-          {filteredCommands.length} command{filteredCommands.length !== 1 ? "s" : ""}
+          {t("schema.commandCount", { count: filteredCommands.length })}
         </span>
       </div>
 
@@ -105,7 +107,7 @@ export default function SchemaCommandTree({ commands, onSelectCommand }: SchemaC
 
       {filteredCommands.length === 0 && (
         <div className="no-commands">
-          <p>No commands match "{searchQuery}"</p>
+          <p>{t("schema.noCommands", { query: searchQuery })}</p>
         </div>
       )}
     </div>

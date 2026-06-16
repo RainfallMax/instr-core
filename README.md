@@ -496,6 +496,13 @@ curl http://localhost:8765/agent/multi/runs/run-xxxxxxxx/export
 
 The Tauri desktop app exposes the same workflow as the **Keithley Dual** panel.
 
+The desktop frontend uses mature open-source UI infrastructure:
+
+- React + Vite for the app runtime
+- shadcn-like local primitives for buttons and card composition
+- ECharts for sweep and dual-device charts
+- i18next / react-i18next for Chinese and English UI internationalization
+
 ### 5. LLM Structured Planning and Run Records
 
 `/agent/llm/plan` uses an OpenAI-compatible chat completions endpoint when an API

@@ -18,4 +18,16 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+  build: {
+    chunkSizeWarningLimit: 650,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom"],
+          i18n: ["i18next", "react-i18next"],
+          echarts: ["echarts"],
+        },
+      },
+    },
+  },
 }));

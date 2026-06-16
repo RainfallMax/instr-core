@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { SweepPoint } from "../../types";
 
 interface SweepDataTableProps {
@@ -7,6 +8,7 @@ interface SweepDataTableProps {
 const MAX_ROWS = 100;
 
 export default function SweepDataTable({ points }: SweepDataTableProps) {
+  const { t } = useTranslation();
   const totalRows = points.length;
   const displayPoints = points.slice(-MAX_ROWS);
   const hiddenCount = totalRows - displayPoints.length;
@@ -14,16 +16,16 @@ export default function SweepDataTable({ points }: SweepDataTableProps) {
   return (
     <div className="sweep-data-table">
       <div className="table-header">
-        <h3>Data Table</h3>
-        <span className="row-count">{totalRows} rows total</span>
+        <h3>{t("sweep.dataTable")}</h3>
+        <span className="row-count">{t("sweep.rowsTotal", { count: totalRows })}</span>
       </div>
       <div className="table-scroll">
         <table>
           <thead>
             <tr>
-              <th>Voltage (V)</th>
-              <th>Current (A)</th>
-              <th>Timestamp</th>
+              <th>{t("sweep.voltage")}</th>
+              <th>{t("sweep.current")}</th>
+              <th>{t("common.timestamp")}</th>
             </tr>
           </thead>
           <tbody>
@@ -36,12 +38,12 @@ export default function SweepDataTable({ points }: SweepDataTableProps) {
             ))}
             {hiddenCount > 0 && (
               <tr className="more-rows">
-                <td colSpan={3}>... and {hiddenCount} more rows</td>
+                <td colSpan={3}>{t("sweep.moreRows", { count: hiddenCount })}</td>
               </tr>
             )}
             {totalRows === 0 && (
               <tr className="no-data">
-                <td colSpan={3}>No data</td>
+                <td colSpan={3}>{t("common.noData")}</td>
               </tr>
             )}
           </tbody>

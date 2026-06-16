@@ -1,4 +1,7 @@
+import { useTranslation } from "react-i18next";
 import { ConnectedPanelProps } from "../types";
+import { Button } from "./ui/Button";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/Card";
 
 export default function ConnectedPanel({
   connected,
@@ -7,9 +10,13 @@ export default function ConnectedPanel({
   onBrowseSchema,
   onOpenTerminal,
 }: ConnectedPanelProps) {
+  const { t } = useTranslation();
   return (
-    <section className="panel">
-      <h2>Connected</h2>
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("panels.connected")}</CardTitle>
+      </CardHeader>
+      <CardContent>
       <ul className="list">
         {connected.map((inst) => (
           <li key={inst.address} className="list-item">
@@ -31,28 +38,33 @@ export default function ConnectedPanel({
                   {inst.manufacturer} {inst.model} ({inst.schema_key})
                 </span>
               ) : (
-                <span className="no-schema-hint">No schema matched</span>
+                <span className="no-schema-hint">{t("panels.noSchema")}</span>
               )}
             </label>
             {inst.schema_key && (
               <div className="instrument-actions">
-                <button
+                <Button
                   className="action-btn browse"
+                  variant="outline"
+                  size="sm"
                   onClick={() => onBrowseSchema?.(inst.schema_key!)}
                 >
-                  Browse Schema
-                </button>
-                <button
+                  {t("panels.browseSchema")}
+                </Button>
+                <Button
                   className="action-btn terminal"
+                  variant="outline"
+                  size="sm"
                   onClick={() => onOpenTerminal?.(inst.address)}
                 >
-                  Terminal
-                </button>
+                  {t("panels.terminal")}
+                </Button>
               </div>
             )}
           </li>
         ))}
       </ul>
-    </section>
+      </CardContent>
+    </Card>
   );
 }

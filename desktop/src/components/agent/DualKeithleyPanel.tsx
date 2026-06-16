@@ -1,4 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import * as echarts from "echarts/core";
+import { GraphicComponent, GridComponent, TooltipComponent } from "echarts/components";
+import { LineChart } from "echarts/charts";
+import { CanvasRenderer } from "echarts/renderers";
 import {
   API_BASE,
   AgentRunSummary,
@@ -8,6 +13,9 @@ import {
   DualKeithleyRun,
   SweepConfig,
 } from "../../types";
+import { Button } from "../ui/Button";
+
+echarts.use([GraphicComponent, GridComponent, TooltipComponent, LineChart, CanvasRenderer]);
 
 interface DualKeithleyPanelProps {
   connected: ConnectedInstrument[];
@@ -35,81 +43,66 @@ function detectAddress(
 }
 
 function DualSweepChart({ run }: { run: DualKeithleyRun | null }) {
+  const { t } = useTranslation();
+  const chartRef = useRef<HTMLDivElement | null>(null);
   const points = run?.result?.points ?? [];
-  const width = 640;
-  const height = 280;
-  const margin = { top: 20, right: 24, bottom: 42, left: 64 };
-  const chartWidth = width - margin.left - margin.right;
-  const chartHeight = height - margin.top - margin.bottom;
 
-  if (points.length === 0) {
-    return (
-      <div className="dual-chart empty">
-        <svg viewBox={`0 0 ${width} ${height}`}>
-          <text x={width / 2} y={height / 2} textAnchor="middle">
-            No dual sweep data
-          </text>
-        </svg>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!chartRef.current) return;
+    const chart = echarts.init(chartRef.current, "dark");
+    chart.setOption({
+      backgroundColor: "transparent",
+      grid: { top: 28, right: 28, bottom: 48, left: 72 },
+      tooltip: { trigger: "axis" },
+      xAxis: {
+        type: "value",
+        name: t("dual.sourceVoltage"),
+        nameLocation: "middle",
+        nameGap: 30,
+        axisLine: { lineStyle: { color: "#cdd6f4" } },
+        splitLine: { lineStyle: { color: "#313244" } },
+      },
+      yAxis: {
+        type: "value",
+        name: t("dual.meterValue"),
+        nameLocation: "middle",
+        nameGap: 48,
+        axisLine: { lineStyle: { color: "#cdd6f4" } },
+        splitLine: { lineStyle: { color: "#313244" } },
+      },
+      series: [{
+        type: "line",
+        symbol: "circle",
+        symbolSize: 6,
+        data: points.map((point) => [point.source_voltage, point.meter_value]),
+        lineStyle: { width: 2, color: "#a6e3a1" },
+        itemStyle: { color: "#89b4fa" },
+      }],
+      graphic:
+        points.length === 0
+          ? {
+              type: "text",
+              left: "center",
+              top: "middle",
+              style: { text: t("dual.noDualData"), fill: "#6c7086", fontSize: 14 },
+            }
+          : undefined,
+    });
+    const resize = () => chart.resize();
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      chart.dispose();
+    };
+  }, [points, t]);
 
-  const xValues = points.map((point) => point.source_voltage);
-  const yValues = points.map((point) => point.meter_value);
-  const xMin = Math.min(...xValues);
-  const xMax = Math.max(...xValues);
-  const yMin = Math.min(...yValues);
-  const yMax = Math.max(...yValues);
-  const xRange = xMax === xMin ? 1 : xMax - xMin;
-  const yRange = yMax === yMin ? 1 : yMax - yMin;
-  const xScale = (value: number) => margin.left + ((value - xMin) / xRange) * chartWidth;
-  const yScale = (value: number) =>
-    margin.top + chartHeight - ((value - yMin) / yRange) * chartHeight;
-  const path = points
-    .map((point, index) => {
-      const command = index === 0 ? "M" : "L";
-      return `${command} ${xScale(point.source_voltage)} ${yScale(point.meter_value)}`;
-    })
-    .join(" ");
-
-  return (
-    <div className="dual-chart">
-      <svg viewBox={`0 0 ${width} ${height}`}>
-        <line
-          x1={margin.left}
-          y1={margin.top + chartHeight}
-          x2={margin.left + chartWidth}
-          y2={margin.top + chartHeight}
-        />
-        <line
-          x1={margin.left}
-          y1={margin.top}
-          x2={margin.left}
-          y2={margin.top + chartHeight}
-        />
-        <path d={path} />
-        {points.map((point, index) => (
-          <circle
-            key={`${point.timestamp}-${index}`}
-            cx={xScale(point.source_voltage)}
-            cy={yScale(point.meter_value)}
-            r="3"
-          />
-        ))}
-        <text x={margin.left + chartWidth / 2} y={height - 8} textAnchor="middle">
-          Source Voltage (V)
-        </text>
-        <text x="16" y={margin.top + chartHeight / 2} textAnchor="middle">
-          Meter Value
-        </text>
-      </svg>
-    </div>
-  );
+  return <div className="dual-chart echarts-panel" ref={chartRef} />;
 }
 
 export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps) {
+  const { t } = useTranslation();
   const [goal, setGoal] = useState(
-    "Sweep 0V to 1V in 0.5V steps and measure DUT voltage with DMM6500",
+    t("dual.defaultGoal"),
   );
   const [sourceAddress, setSourceAddress] = useState(detectAddress(connected, "smu"));
   const [meterAddress, setMeterAddress] = useState(detectAddress(connected, "dmm"));
@@ -217,7 +210,7 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
       await refreshRuns();
       return data.run;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
+      setError(err instanceof Error ? err.message : t("common.requestFailed"));
       throw err;
     } finally {
       setBusy(false);
@@ -272,7 +265,7 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
       }
       applyRun(data.run);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Load failed");
+      setError(err instanceof Error ? err.message : t("common.loadFailed"));
     } finally {
       setBusy(false);
     }
@@ -281,14 +274,14 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
   return (
     <div className="dual-keithley-panel">
       <section className="dual-config panel">
-        <h2>Keithley Dual Sweep</h2>
+        <h2>{t("dual.title")}</h2>
         <label>
-          Goal
+          {t("dual.goal")}
           <textarea value={goal} onChange={(event) => setGoal(event.target.value)} />
         </label>
         <div className="dual-grid">
           <label>
-            2600 address
+            {t("dual.sourceAddress")}
             <input
               list="connected-addresses"
               value={sourceAddress}
@@ -296,7 +289,7 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
             />
           </label>
           <label>
-            DMM6500 address
+            {t("dual.meterAddress")}
             <input
               list="connected-addresses"
               value={meterAddress}
@@ -304,39 +297,39 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
             />
           </label>
           <label>
-            Source schema
+            {t("dual.sourceSchema")}
             <input value={sourceSchema} onChange={(event) => setSourceSchema(event.target.value)} />
           </label>
           <label>
-            Meter schema
+            {t("dual.meterSchema")}
             <input value={meterSchema} onChange={(event) => setMeterSchema(event.target.value)} />
           </label>
           <label>
-            Start V
+            {t("dual.startV")}
             <input value={startVoltage} onChange={(event) => setStartVoltage(event.target.value)} />
           </label>
           <label>
-            Stop V
+            {t("dual.stopV")}
             <input value={stopVoltage} onChange={(event) => setStopVoltage(event.target.value)} />
           </label>
           <label>
-            Step V
+            {t("dual.stepV")}
             <input value={step} onChange={(event) => setStep(event.target.value)} />
           </label>
           <label>
-            Compliance A
+            {t("dual.complianceA")}
             <input value={compliance} onChange={(event) => setCompliance(event.target.value)} />
           </label>
           <label>
-            Delay ms
+            {t("dual.delayMs")}
             <input value={delayMs} onChange={(event) => setDelayMs(event.target.value)} />
           </label>
           <label>
-            Meter range
+            {t("dual.meterRange")}
             <input value={meterRange} onChange={(event) => setMeterRange(event.target.value)} />
           </label>
           <label>
-            Direction
+            {t("dual.direction")}
             <select
               value={direction}
               onChange={(event) => setDirection(event.target.value as SweepConfig["direction"])}
@@ -355,37 +348,27 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
           ))}
         </datalist>
         <div className="dual-actions">
-          <button onClick={handleAiPlan} disabled={busy}>
-            AI Plan
-          </button>
-          <button onClick={handlePlan} disabled={busy}>
-            Plan
-          </button>
-          <button onClick={handleDryRun} disabled={busy}>
-            Dry Run
-          </button>
-          <button onClick={handleExecute} disabled={busy}>
-            Execute
-          </button>
-          <button onClick={handleExport} disabled={!run?.result}>
-            Export CSV
-          </button>
+          <Button onClick={handleAiPlan} disabled={busy}>{t("dual.aiPlan")}</Button>
+          <Button onClick={handlePlan} disabled={busy}>{t("dual.plan")}</Button>
+          <Button onClick={handleDryRun} disabled={busy}>{t("dual.dryRun")}</Button>
+          <Button onClick={handleExecute} disabled={busy} variant="destructive">{t("dual.execute")}</Button>
+          <Button onClick={handleExport} disabled={!run?.result} variant="outline">{t("dual.exportCsv")}</Button>
         </div>
         {error && <div className="sweep-error">{error}</div>}
       </section>
 
       <section className="dual-run panel">
-        <h2>Run State</h2>
+        <h2>{t("dual.runState")}</h2>
         <div className="dual-summary">
-          <span>run: {run?.run_id ?? "-"}</span>
-          <span>status: {run?.status ?? "idle"}</span>
-          <span>points: {run?.validation?.estimated_points ?? run?.result?.summary.points ?? "-"}</span>
-          <span>mean: {formatNumber(run?.result?.summary.mean ?? null)}</span>
+          <span>{t("common.run")}: {run?.run_id ?? "-"}</span>
+          <span>{t("common.status")}: {run?.status ?? "idle"}</span>
+          <span>{t("common.points")}: {run?.validation?.estimated_points ?? run?.result?.summary.points ?? "-"}</span>
+          <span>{t("common.mean")}: {formatNumber(run?.result?.summary.mean ?? null)}</span>
         </div>
         {run?.validation && (
           <div className={`validation-result ${run.validation.valid ? "pass" : "fail"}`}>
             <div className="validation-header">
-              {run.validation.valid ? "Validation passed" : "Validation blocked"}
+              {run.validation.valid ? t("dual.validationPassed") : t("dual.validationBlocked")}
             </div>
             {run.validation.issues.length > 0 && (
               <ul>
@@ -397,7 +380,7 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
           </div>
         )}
         <div className="dual-command-preview">
-          <h3>Command Preview</h3>
+          <h3>{t("dual.commandPreview")}</h3>
           <div>
             <strong>2600</strong>
             <pre>{(run?.plan.commands.source ?? []).join("\n")}</pre>
@@ -409,10 +392,10 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
         </div>
         <div className="dual-history">
           <div className="dual-history-header">
-            <h3>Run Records</h3>
-            <button onClick={refreshRuns} disabled={busy}>
-              Refresh
-            </button>
+            <h3>{t("dual.records")}</h3>
+            <Button onClick={refreshRuns} disabled={busy} variant="outline" size="sm">
+              {t("common.refresh")}
+            </Button>
           </div>
           <ul>
             {runs.slice(0, 8).map((item) => (
@@ -424,21 +407,21 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
                 </button>
               </li>
             ))}
-            {runs.length === 0 && <li className="dual-history-empty">No recorded runs</li>}
+            {runs.length === 0 && <li className="dual-history-empty">{t("dual.noRecords")}</li>}
           </ul>
         </div>
       </section>
 
       <section className="dual-results panel">
-        <h2>Result</h2>
+        <h2>{t("dual.result")}</h2>
         <DualSweepChart run={run} />
         <div className="table-scroll">
           <table>
             <thead>
               <tr>
-                <th>Source Voltage (V)</th>
-                <th>Meter Value</th>
-                <th>Timestamp</th>
+                <th>{t("dual.sourceVoltage")}</th>
+                <th>{t("dual.meterValue")}</th>
+                <th>{t("common.timestamp")}</th>
               </tr>
             </thead>
             <tbody>
@@ -451,7 +434,7 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
               ))}
               {!run?.result && (
                 <tr className="no-data">
-                  <td colSpan={3}>No data</td>
+                  <td colSpan={3}>{t("common.noData")}</td>
                 </tr>
               )}
             </tbody>

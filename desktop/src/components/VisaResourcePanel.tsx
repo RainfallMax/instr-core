@@ -1,7 +1,11 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { API_BASE, ConnectedInstrument, VisaResourcePanelProps } from "../types";
+import { Button } from "./ui/Button";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/Card";
 
 export default function VisaResourcePanel({ onConnect }: VisaResourcePanelProps) {
+  const { t } = useTranslation();
   const [resources, setResources] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
@@ -28,7 +32,7 @@ export default function VisaResourcePanel({ onConnect }: VisaResourcePanelProps)
       const data: ConnectedInstrument = await res.json();
       onConnect(data);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Connection failed";
+      const msg = err instanceof Error ? err.message : t("common.connectionFailed");
       setError(msg);
       // Auto-clear error after 5 seconds
       setTimeout(() => setError(null), 5000);
@@ -38,9 +42,12 @@ export default function VisaResourcePanel({ onConnect }: VisaResourcePanelProps)
   };
 
   return (
-    <section className="panel">
-      <h2>VISA Resources</h2>
-      <button onClick={scanResources}>Scan</button>
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("panels.visa")}</CardTitle>
+      </CardHeader>
+      <CardContent>
+      <Button onClick={scanResources}>{t("panels.scan")}</Button>
       {error && (
         <div className="visa-error">{error}</div>
       )}
@@ -48,15 +55,16 @@ export default function VisaResourcePanel({ onConnect }: VisaResourcePanelProps)
         {resources.map((addr) => (
           <li key={addr} className="list-item visa-resource">
             <code>{addr}</code>
-            <button
+            <Button
               onClick={() => connectInstrument(addr)}
               disabled={connecting === addr}
             >
-              {connecting === addr ? "Connecting..." : "Connect"}
-            </button>
+              {connecting === addr ? t("common.loading") : t("panels.connect")}
+            </Button>
           </li>
         ))}
       </ul>
-    </section>
+      </CardContent>
+    </Card>
   );
 }

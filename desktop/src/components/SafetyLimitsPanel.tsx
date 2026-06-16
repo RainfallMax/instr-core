@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { GlobalLimits, LimitDef } from "../types";
 
 interface SafetyLimitsPanelProps {
@@ -22,11 +23,12 @@ function LimitCard({ label, limit, borderColor }: LimitCardProps) {
 }
 
 export default function SafetyLimitsPanel({ limits }: SafetyLimitsPanelProps) {
+  const { t } = useTranslation();
   const limitConfigs: { key: keyof GlobalLimits; label: string; color: string }[] = [
-    { key: "voltage", label: "Voltage", color: "#f9e2af" },
-    { key: "current", label: "Current", color: "#89b4fa" },
-    { key: "power", label: "Power", color: "#a6e3a1" },
-    { key: "frequency", label: "Frequency", color: "#fab387" },
+    { key: "voltage", label: t("schema.voltage"), color: "#f9e2af" },
+    { key: "current", label: t("schema.current"), color: "#89b4fa" },
+    { key: "power", label: t("schema.power"), color: "#a6e3a1" },
+    { key: "frequency", label: t("schema.frequency"), color: "#fab387" },
   ];
 
   const hasAnyLimits = limitConfigs.some((config) => limits[config.key] !== undefined && limits[config.key] !== null);
@@ -34,7 +36,7 @@ export default function SafetyLimitsPanel({ limits }: SafetyLimitsPanelProps) {
   if (!hasAnyLimits) {
     return (
       <div className="safety-limits-panel empty">
-        <p className="no-limits">No safety limits declared</p>
+        <p className="no-limits">{t("schema.noLimits")}</p>
       </div>
     );
   }
