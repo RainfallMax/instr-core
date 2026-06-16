@@ -2,7 +2,7 @@
 
 # instr-core
 
-**Safe, verifiable instrument-control context for AI coding assistants.**
+**An AI experiment agent and physical safety layer for instrument control.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Language-Python-3776ab?logo=python&logoColor=white)](https://www.python.org/)
@@ -15,7 +15,30 @@
 
 ---
 
-## Why Is AI-Generated Instrument Control Dangerous?
+## What Is instr-core?
+
+`instr-core` is an AI-native instrument-control core. It lets AI systems plan laboratory experiments, validate every hardware command against structured instrument schemas, run safe dry-runs by default, and execute on real VISA/SCPI instruments only after explicit confirmation.
+
+The project has three layers:
+
+1. **Agent layer** — turns a high-level experiment request into a structured, verifiable plan.
+2. **Safety layer** — validates ranges, state transitions, compliance settings, output state, and command order.
+3. **Runtime layer** — exposes the same core through MCP, FastAPI, and a Tauri desktop app.
+
+The first agent workflow is **AI-driven IV sweep**:
+
+```text
+Natural-language goal
+  → structured IV sweep plan
+  → dry-run validation
+  → explicit confirmation
+  → PyVISA execution
+  → data, CSV, chart, and run summary
+```
+
+---
+
+## Why Is AI-Controlled Hardware Dangerous?
 
 Today's general-purpose LLMs (such as GPT-4o, Claude 3.5 Sonnet) do understand Python, and some have even memorized PyVISA's API documentation. But they have two fatal flaws:
 
@@ -29,17 +52,64 @@ AI doesn't know that a precision device rated for only 10V will literally be des
 
 ---
 
-## How Does instr-core "Assist" AI?
+## How Does instr-core Assist AI?
 
-This project adopts one of the most prominent ideas in the AI Agent space — MCP (Model Context Protocol) — turning the traditional human workflow into an AI workflow:
+This project turns instrument operation into a plan-validate-execute workflow for AI agents:
 
 **Feeding AI a structured "instrument dictionary" (Schema):**
 
 Instead of dumping hundreds of pages of English PDF manuals on the AI and letting it slowly summarize, instr-core advocates using standardized YAML/JSON files to solidify an instrument's capabilities, ranges, and command sets. Before writing code, the AI reads this Schema (context) and instantly knows what the instrument can and cannot do.
 
-**Mandatory "interception and validation" (Validation):**
+**Mandatory dry-run and validation:**
 
-When the AI (or a human using Copilot) writes a snippet of hardware-calling code, instr-core's underlying layer intercepts it. It checks: Is this voltage out of range? Is this channel currently enabled? If it doesn't match the rules, it throws an error at the software level — never sending dangerous commands to physical serial ports or network interfaces.
+When an AI proposes an experiment or a SCPI command, instr-core validates it first. It checks: Is this voltage out of range? Has compliance been set? Is output currently on? Does this command violate the instrument state machine? If the plan is unsafe, it returns issues and suggestions instead of touching hardware.
+
+**Confirmed execution only:**
+
+Agent plans start in `dry_run` mode. Real execution requires an explicit confirmation flag and a valid dry-run result. This is the core physical-safety boundary: AI may plan, but it cannot silently energize hardware.
+
+---
+
+## AI Experiment Agent
+
+The new agent surface is designed for workflows where a user describes an experiment, not a command sequence.
+
+Example request:
+
+```text
+Sweep 0V to 5V in 0.1V steps with 10mA compliance on the connected Keithley.
+```
+
+The Agent API parses that into a structured plan:
+
+```json
+{
+  "experiment_type": "iv_sweep",
+  "mode": "dry_run",
+  "instrument_key": "keithley/smu/2600",
+  "address": "USB0::INSTR",
+  "config": {
+    "start_voltage": 0,
+    "stop_voltage": 5,
+    "step": 0.1,
+    "compliance": 0.01,
+    "delay_ms": 10,
+    "direction": "UP"
+  },
+  "requires_confirmation": true
+}
+```
+
+Current Agent API endpoints:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /agent/plan` | Parse a natural-language IV sweep goal into a structured plan. |
+| `POST /agent/dry-run` | Validate the plan, expand command preview, estimate points, and report safety issues. |
+| `POST /agent/execute` | Start the sweep only after valid dry-run and `confirm=true`. |
+| `GET /agent/runs/{run_id}` | Inspect the stored agent run, validation result, and linked sweep session. |
+
+The first version uses a deterministic parser rather than an LLM provider. This keeps the hardware boundary testable: future LLM integrations will produce the same structured `AgentPlan` object, not raw SCPI.
 
 ---
 
@@ -61,9 +131,29 @@ The engineer's core value shifts from "operator" to "rule designer" — the AI i
 
 ## Architecture
 
-`instr-core` has **two runtime surfaces** that share the same Python validation engine:
+`instr-core` has one shared safety core and three runtime surfaces:
 
-### 1. MCP Server (AI Workflow)
+### 1. Agent API (Experiment Workflow)
+
+```mermaid
+flowchart TD
+    USER["User goal\nSweep 0-5V, 10mA"] --> PLAN["Agent Planner\nrule-based MVP"]
+    PLAN --> DRY["Dry-run Validator"]
+    DRY --> CONFIRM{"Human confirms?"}
+    CONFIRM -->|"no"| STOP["No hardware action"]
+    CONFIRM -->|"yes"| EXEC["Sweep Engine"]
+    EXEC --> VISA["PyVISA"]
+    VISA --> HW["Physical SMU"]
+    REG["Instrument Schema"] --> DRY
+    REG --> EXEC
+
+    style USER fill:#1e1e2e,stroke:#89b4fa,color:#cdd6f4
+    style DRY fill:#1e1e2e,stroke:#f9e2af,color:#cdd6f4
+    style EXEC fill:#1e1e2e,stroke:#a6e3a1,color:#cdd6f4
+    style HW fill:#1e1e2e,stroke:#f38ba8,color:#cdd6f4
+```
+
+### 2. MCP Server (AI Coding Workflow)
 ```mermaid
 flowchart TD
     subgraph IDE["AI Coding Assistant"]
@@ -94,7 +184,7 @@ flowchart TD
     style REG fill:#1e1e2e,stroke:#f9e2af,color:#cdd6f4
 ```
 
-### 2. Desktop App (Human + AI Workflow)
+### 3. Desktop App (Human + AI Workflow)
 ```mermaid
 flowchart TD
     subgraph DESKTOP["Tauri Desktop"]
@@ -103,6 +193,7 @@ flowchart TD
     end
 
     subgraph PYTHON["Python Backend"]
+        AGENT["Agent API"]
         API["FastAPI (HTTP)"]
         MCP["MCP Server (stdio)"]
         ENG["Validation Engine"]
@@ -119,6 +210,8 @@ flowchart TD
 
     UI <-->|"HTTP / localhost:8765"| API
     RUST -->|"spawns"| PYTHON
+    API --> AGENT
+    AGENT --> ENG
     API --> ENG
     MCP --> ENG
     ENG --> VISA
@@ -131,11 +224,11 @@ flowchart TD
     style HW fill:#1e1e2e,stroke:#f38ba8,color:#cdd6f4
 ```
 
-The desktop app bundles both workflows: users can manually control instruments via the React UI while the same Python backend continues to serve AI assistants through MCP.
+The desktop app shares the same Python backend: users can manually control instruments, run validated IV sweeps, and later drive the same Agent API from a desktop task panel.
 
 ---
 
-## Core Tools
+## MCP Tools
 
 instr-core exposes the following tools to the AI via the MCP protocol. All calls happen **before** code generation; none directly touch hardware:
 
@@ -256,7 +349,7 @@ smu.write(":OUTP OFF")                # Schema recommends output OFF after test
 - [Node.js](https://nodejs.org/) (>= 20) for the desktop UI
 - [Rust](https://rustup.rs/) (>= 1.75) for the Tauri shell
 
-### 1. Install & Run (MCP Server only)
+### 1. Install & Run the Python Core / MCP Server
 
 ```bash
 # Clone the repository
@@ -294,7 +387,47 @@ cargo tauri build
 # Output: desktop/src-tauri/target/release/bundle/
 ```
 
-### 3. Configure your IDE / AI Assistant (MCP)
+### 3. Agent API: Plan, Dry-Run, Execute
+
+Start the Python API backend:
+
+```bash
+uv run python src/instr_core/api_server.py
+```
+
+Create a plan:
+
+```bash
+curl -X POST http://localhost:8765/agent/plan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "goal": "Sweep 0V to 5V in 0.5V steps with 10mA compliance",
+    "instrument_key": "keithley/smu/2600",
+    "address": "USB0::INSTR"
+  }'
+```
+
+If the instrument was connected through `/visa/connect`, the Agent API can infer `instrument_key` from the address mapping. Supplying it explicitly is useful for dry-run planning and tests.
+
+Dry-run the returned `run_id`:
+
+```bash
+curl -X POST http://localhost:8765/agent/dry-run \
+  -H "Content-Type: application/json" \
+  -d '{"run_id": "run-xxxxxxxx"}'
+```
+
+Execute only after review:
+
+```bash
+curl -X POST http://localhost:8765/agent/execute \
+  -H "Content-Type: application/json" \
+  -d '{"run_id": "run-xxxxxxxx", "confirm": true}'
+```
+
+The execute step is intentionally confirmation-gated. Calling it without `confirm=true` returns an error.
+
+### 4. Configure your IDE / AI Assistant (MCP)
 
 > **Note:** When configuring in an IDE, the working directory may not be the project root. Use an **absolute path** for the registry, or set the `INSTR_CORE_REGISTRY` environment variable.
 
@@ -359,7 +492,7 @@ Or, if `uv` is not on the system `PATH` inside Claude Desktop:
 }
 ```
 
-### 4. What happens next
+### 5. What happens next
 
 After configuration, the AI assistant gains access to instrument-aware tools. Here is what a typical session looks like:
 
@@ -403,8 +536,10 @@ The AI also surfaces a validation summary:
 
 ## Core Features
 
+- **AI experiment agent** — natural-language IV sweep planning, dry-run validation, confirmation-gated execution, and run tracking.
 - **Standardized instrument schema** — structured YAML / JSON in place of PDF manuals.
 - **Safety validation layer** — prevents out-of-range values, illegal state transitions, dangerous outputs, and invalid mode combinations.
+- **FastAPI Agent API** — reusable `/agent/plan`, `/agent/dry-run`, `/agent/execute`, and `/agent/runs/{run_id}` endpoints.
 - **Native MCP support** — compatible with Cursor, Claude Code, Windsurf, and VSCode AI agents.
 - **Python runtime core** — built on the official [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) (FastMCP), easy to extend and integrate with existing Python instrument-control workflows.
 - **Community instrument registry** — Keithley, Keysight, Tektronix, Rohde & Schwarz, NI PXI, and other SCPI instruments.
@@ -418,13 +553,13 @@ The AI also surfaces a validation summary:
 
 - A SCPI autocomplete tool
 - A PDF-to-YAML converter
-- An autonomous control system
+- A system that lets AI bypass human confirmation before energizing hardware
 
 It **is**:
 
-> **A validation and context layer for AI-driven hardware control.**
+> **An AI experiment-agent core with a conservative physical safety layer.**
 
-The goal is not to replace engineers, but to **make AI-generated hardware code safer, more verifiable, and more traceable**.
+The goal is not to replace engineers, but to let AI propose and operate experiments inside explicit, reviewable, schema-verified safety boundaries.
 
 ---
 
@@ -434,9 +569,11 @@ The goal is not to replace engineers, but to **make AI-generated hardware code s
 
 `instr-core` provides:
 
+- Dry-run planning
 - Constraint validation
 - State checking
 - Command semantics
+- Confirmation-gated execution
 - Risk reduction
 
 It **does not guarantee**:
@@ -536,14 +673,18 @@ Each schema may contain:
 
 **Current focus**
 
+- AI IV sweep agent
 - Keithley 2400 / 2600
 - SCPI SourceMeter
 - PyVISA workflows
-- Safe code generation
+- Dry-run-first hardware execution
 - **Tauri desktop app** — instrument panels, SCPI terminal, data capture
 
 **Planned**
 
+- LLM-backed structured planning
+- Desktop Agent panel
+- MCP tools for experiment planning and execution
 - Oscilloscope semantic model
 - PXI system support
 - Binary protocols

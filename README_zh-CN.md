@@ -2,7 +2,7 @@
 
 # instr-core
 
-**为 AI 编程助手提供安全、可验证的仪器控制上下文。**
+**面向仪器控制的 AI 实验代理与物理安全层。**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Language-Python-3776ab?logo=python&logoColor=white)](https://www.python.org/)
@@ -15,7 +15,30 @@
 
 ---
 
-## 为什么 AI 直接写仪器控制会有问题？
+## instr-core 是什么？
+
+`instr-core` 是一个 AI 原生的仪器控制核心。它让 AI 可以规划实验、根据结构化仪器 Schema 校验每一条硬件指令、默认先进行 dry-run，并且只有在用户显式确认后才允许通过 VISA/SCPI 操作真实仪器。
+
+项目分为三层：
+
+1. **Agent 层** — 将高层级实验目标转换成结构化、可验证的实验计划。
+2. **安全层** — 校验量程、状态切换、compliance、输出状态和指令顺序。
+3. **运行时层** — 通过 MCP、FastAPI 和 Tauri 桌面应用暴露同一个核心能力。
+
+第一条 Agent workflow 是 **AI 驱动 IV sweep**：
+
+```text
+自然语言实验目标
+  → 结构化 IV sweep plan
+  → dry-run 安全校验
+  → 用户显式确认
+  → PyVISA 执行
+  → 数据、CSV、图表和运行摘要
+```
+
+---
+
+## 为什么 AI 控制真实硬件会有问题？
 
 现在的通用大模型（比如 GPT-4o、Claude 3.5 Sonnet）确实懂 Python，甚至背过 PyVISA 的 API 文档。但是它们有两个致命缺陷：
 
@@ -29,17 +52,64 @@ AI 不知道一台只能承受 10V 的精密设备，如果被写入了 `SOUR:VO
 
 ---
 
-## instr-core 是如何"辅助" AI 的？
+## instr-core 是如何辅助 AI 的？
 
-这个项目采用了 AI Agent 领域最主流的 MCP (Model Context Protocol) 思想，将传统的人类工作流转变为 AI 工作流：
+这个项目将仪器操作变成适合 AI Agent 的 plan-validate-execute 工作流：
 
 **给 AI 喂结构化的"仪器字典" (Schema)：**
 
 不需要人类把几百页的英文 PDF 手册丢给 AI 让它慢慢总结。instr-core 提倡用标准化的 YAML/JSON 文件把仪器的能力、量程、指令集固化下来。AI 写代码前，直接读取这个 Schema（上下文），瞬间就知道这台仪器能干什么、不能干什么。
 
-**强制的"拦截与校验" (Validation)：**
+**强制 dry-run 与校验：**
 
-当 AI（或者人类用 Copilot）写出了一段调用硬件的代码，instr-core 的底层会进行拦截。它会核对：这个电压超限了吗？这个通道现在是开启状态吗？如果不符合规则，直接在软件层面报错，绝对不把危险指令发给物理串口或网口。
+当 AI 提出一个实验计划或一条 SCPI 指令时，instr-core 会先验证它。系统会检查：电压是否超限？是否设置了 compliance？输出是否已经开启？这条指令是否违反仪器状态机？如果计划不安全，系统返回问题和修复建议，而不是触碰硬件。
+
+**只有确认后才执行：**
+
+Agent plan 默认从 `dry_run` 模式开始。真实执行必须带有显式确认标志，并且 dry-run 结果必须有效。这是项目的核心物理安全边界：AI 可以规划，但不能悄悄给硬件上电。
+
+---
+
+## AI 实验代理
+
+新的 Agent 接口面向“用户描述实验目标”的场景，而不是要求用户手写命令序列。
+
+示例请求：
+
+```text
+使用连接的 Keithley，从 0V 扫到 5V，步进 0.1V，compliance 10mA。
+```
+
+Agent API 会解析成结构化 plan：
+
+```json
+{
+  "experiment_type": "iv_sweep",
+  "mode": "dry_run",
+  "instrument_key": "keithley/smu/2600",
+  "address": "USB0::INSTR",
+  "config": {
+    "start_voltage": 0,
+    "stop_voltage": 5,
+    "step": 0.1,
+    "compliance": 0.01,
+    "delay_ms": 10,
+    "direction": "UP"
+  },
+  "requires_confirmation": true
+}
+```
+
+当前 Agent API：
+
+| Endpoint | 作用 |
+| --- | --- |
+| `POST /agent/plan` | 将自然语言 IV sweep 目标解析成结构化 plan。 |
+| `POST /agent/dry-run` | 校验 plan、展开命令预览、估算点数并返回安全问题。 |
+| `POST /agent/execute` | 仅在 dry-run 有效且 `confirm=true` 时启动 sweep。 |
+| `GET /agent/runs/{run_id}` | 查询 agent run、校验结果和关联 sweep session。 |
+
+第一版使用确定性的 rule-based parser，而不是直接接 LLM provider。这样硬件边界是可测试的：未来 LLM 也只能生成同一个结构化 `AgentPlan`，不能直接发裸 SCPI。
 
 ---
 
@@ -61,9 +131,29 @@ AI 不知道一台只能承受 10V 的精密设备，如果被写入了 `SOUR:VO
 
 ## 架构
 
-`instr-core` 有两套运行时界面，共享同一个 Python 验证引擎：
+`instr-core` 有一个共享安全核心和三套运行时界面：
 
-### 1. MCP Server（AI 工作流）
+### 1. Agent API（实验工作流）
+
+```mermaid
+flowchart TD
+    USER["用户目标\n0-5V sweep, 10mA"] --> PLAN["Agent Planner\nrule-based MVP"]
+    PLAN --> DRY["Dry-run 校验器"]
+    DRY --> CONFIRM{"人工确认？"}
+    CONFIRM -->|"否"| STOP["不触碰硬件"]
+    CONFIRM -->|"是"| EXEC["Sweep Engine"]
+    EXEC --> VISA["PyVISA"]
+    VISA --> HW["物理 SMU"]
+    REG["仪器 Schema"] --> DRY
+    REG --> EXEC
+
+    style USER fill:#1e1e2e,stroke:#89b4fa,color:#cdd6f4
+    style DRY fill:#1e1e2e,stroke:#f9e2af,color:#cdd6f4
+    style EXEC fill:#1e1e2e,stroke:#a6e3a1,color:#cdd6f4
+    style HW fill:#1e1e2e,stroke:#f38ba8,color:#cdd6f4
+```
+
+### 2. MCP Server（AI 编程工作流）
 ```mermaid
 flowchart TD
     subgraph IDE["AI 编程助手"]
@@ -94,7 +184,7 @@ flowchart TD
     style REG fill:#1e1e2e,stroke:#f9e2af,color:#cdd6f4
 ```
 
-### 2. 桌面应用（人工 + AI 工作流）
+### 3. 桌面应用（人工 + AI 工作流）
 ```mermaid
 flowchart TD
     subgraph DESKTOP["Tauri 桌面端"]
@@ -103,6 +193,7 @@ flowchart TD
     end
 
     subgraph PYTHON["Python 后端"]
+        AGENT["Agent API"]
         API["FastAPI (HTTP)"]
         MCP["MCP Server (stdio)"]
         ENG["验证引擎"]
@@ -119,6 +210,8 @@ flowchart TD
 
     UI <--> |"HTTP / localhost:8765"| API
     RUST --> |"启动子进程"| PYTHON
+    API --> AGENT
+    AGENT --> ENG
     API --> ENG
     MCP --> ENG
     ENG --> VISA
@@ -131,11 +224,11 @@ flowchart TD
     style HW fill:#1e1e2e,stroke:#f38ba8,color:#cdd6f4
 ```
 
-桌面应用同时承载两套工作流：用户可以通过 React UI 手动控制仪器，而同一 Python 后端继续通过 MCP 为 AI 助手提供服务。
+桌面应用共享同一个 Python 后端：用户可以手动控制仪器、运行经过校验的 IV sweep，后续也可以在桌面任务面板中驱动同一套 Agent API。
 
 ---
 
-## 核心工具
+## MCP 工具
 
 instr-core 通过 MCP 协议向 AI 暴露以下工具，所有调用均在代码生成前完成，绝不直接操作硬件：
 
@@ -255,7 +348,7 @@ smu.write(":OUTP OFF")                # Schema 建议测试结束后关闭输出
 - [Node.js](https://nodejs.org/) (>= 20) 用于桌面 UI
 - [Rust](https://rustup.rs/) (>= 1.75) 用于 Tauri 壳层
 
-### 1. 安装与运行（仅 MCP Server）
+### 1. 安装与运行 Python 核心 / MCP Server
 
 ```bash
 # 克隆仓库
@@ -293,20 +386,47 @@ cargo tauri build
 # 输出：desktop/src-tauri/target/release/bundle/
 ```
 
-### 3. 配置你的 IDE / AI 助手（MCP）
+### 3. Agent API：Plan、Dry-run、Execute
+
+启动 Python API 后端：
 
 ```bash
-# 安装到 Claude Desktop（需要已安装 Claude Desktop 应用）
-uv run mcp install src/instr_core/main.py
-
-# 或通过环境变量指定 registry 路径
-INSTR_CORE_REGISTRY=/absolute/path/to/registry uv run mcp install src/instr_core/main.py
-
-# 使用 MCP Inspector 开发调试
-uv run mcp dev src/instr_core/main.py
+uv run python src/instr_core/api_server.py
 ```
 
-### 3. 配置你的 IDE / AI 助手
+创建 plan：
+
+```bash
+curl -X POST http://localhost:8765/agent/plan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "goal": "Sweep 0V to 5V in 0.5V steps with 10mA compliance",
+    "instrument_key": "keithley/smu/2600",
+    "address": "USB0::INSTR"
+  }'
+```
+
+如果仪器已经通过 `/visa/connect` 连接，Agent API 可以从 address 映射推断 `instrument_key`。显式传入 `instrument_key` 更适合 dry-run 规划和测试。
+
+对返回的 `run_id` 做 dry-run：
+
+```bash
+curl -X POST http://localhost:8765/agent/dry-run \
+  -H "Content-Type: application/json" \
+  -d '{"run_id": "run-xxxxxxxx"}'
+```
+
+审核后再执行：
+
+```bash
+curl -X POST http://localhost:8765/agent/execute \
+  -H "Content-Type: application/json" \
+  -d '{"run_id": "run-xxxxxxxx", "confirm": true}'
+```
+
+执行步骤有意要求显式确认。不带 `confirm=true` 调用会直接返回错误。
+
+### 4. 配置你的 IDE / AI 助手（MCP）
 
 > **注意：** IDE 中配置时，工作目录可能不是项目根目录。请使用 **绝对路径** 指定 registry，或设置 `INSTR_CORE_REGISTRY` 环境变量。
 
@@ -371,7 +491,7 @@ uv run mcp dev src/instr_core/main.py
 }
 ```
 
-### 4. 配好之后是什么效果？
+### 5. 配好之后是什么效果？
 
 配置完成后，AI 助手将获得仪器感知能力。以下是典型的使用场景：
 
@@ -415,8 +535,10 @@ AI 还会输出验证摘要：
 
 ## 核心特性
 
+- **AI 实验代理** — 自然语言 IV sweep 规划、dry-run 校验、确认后执行和 run 状态追踪。
 - **标准化 Instrument Schema** — 用结构化 YAML / JSON 替代 PDF 手册。
 - **安全验证层** — 防止超量程、非法状态切换、危险输出、错误模式组合。
+- **FastAPI Agent API** — 提供 `/agent/plan`、`/agent/dry-run`、`/agent/execute`、`/agent/runs/{run_id}`。
 - **原生 MCP 支持** — 兼容 Cursor、Claude Code、Windsurf、VSCode AI Agent。
 - **Python 核心运行时** — 基于官方 [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) (FastMCP)，易于扩展，可无缝集成现有 Python 仪器控制工作流。
 - **社区仪器 Registry** — 支持 Keithley、Keysight、Tektronix、Rohde & Schwarz、NI PXI 以及更多 SCPI 仪器。
@@ -430,13 +552,13 @@ AI 还会输出验证摘要：
 
 - SCPI 自动补全工具
 - PDF 转 YAML 工具
-- AI 自动控制系统
+- 允许 AI 绕过人工确认直接给硬件上电的系统
 
 它 **是**:
 
-> **AI 硬件控制的验证与上下文层。**
+> **带有保守物理安全层的 AI 实验代理核心。**
 
-目标不是替代工程师，而是 **让 AI 生成的硬件代码更安全、更可验证、更可追踪**。
+目标不是替代工程师，而是让 AI 在明确、可审核、Schema 校验过的安全边界内提出并执行实验。
 
 ---
 
@@ -446,9 +568,11 @@ AI 还会输出验证摘要：
 
 `instr-core` 提供：
 
+- Dry-run 规划
 - 约束验证
 - 状态检查
 - 指令语义
+- 确认后执行
 - 风险降低
 
 但 **不保证**:
@@ -548,14 +672,18 @@ tests/fixtures/registry/
 
 **当前重点**
 
+- AI IV sweep agent
 - Keithley 2400 / 2600
 - SCPI SourceMeter
 - PyVISA 工作流
-- 安全代码生成
+- dry-run-first 硬件执行
 - **Tauri 桌面应用** — 仪器面板、SCPI 终端、数据捕获
 
 **未来计划**
 
+- LLM 驱动的结构化规划
+- 桌面 Agent 面板
+- 用于实验规划和执行的 MCP tools
 - 示波器语义模型
 - PXI 系统支持
 - 二进制协议
