@@ -108,3 +108,51 @@ def test_agent_dry_run_rejects_over_limit_voltage(mock_pyvisa: MagicMock) -> Non
     validation = dry_response.json()["run"]["validation"]
     assert validation["valid"] is False
     assert any("Voltage exceeds" in issue for issue in validation["issues"])
+
+
+@patch("instr_core.api_server.pyvisa")
+def test_agent_execute_requires_confirmation(mock_pyvisa: MagicMock) -> None:
+    client = make_client()
+    connect_keithley(client, mock_pyvisa)
+    plan_response = client.post(
+        "/agent/plan",
+        json={
+            "goal": "Sweep 0V to 1V in 0.5V steps with 10mA compliance",
+            "address": "USB0::INSTR",
+        },
+    )
+    run_id = plan_response.json()["run"]["run_id"]
+    client.post("/agent/dry-run", json={"run_id": run_id})
+
+    execute_response = client.post(
+        "/agent/execute",
+        json={"run_id": run_id, "confirm": False},
+    )
+
+    assert execute_response.status_code == 400
+    assert "confirm=true" in execute_response.json()["detail"]
+
+
+@patch("instr_core.api_server.pyvisa")
+def test_agent_execute_starts_sweep_after_valid_dry_run(mock_pyvisa: MagicMock) -> None:
+    client = make_client()
+    connect_keithley(client, mock_pyvisa)
+    plan_response = client.post(
+        "/agent/plan",
+        json={
+            "goal": "Sweep 0V to 1V in 0.5V steps with 10mA compliance",
+            "address": "USB0::INSTR",
+        },
+    )
+    run_id = plan_response.json()["run"]["run_id"]
+    client.post("/agent/dry-run", json={"run_id": run_id})
+
+    execute_response = client.post(
+        "/agent/execute",
+        json={"run_id": run_id, "confirm": True},
+    )
+
+    assert execute_response.status_code == 200
+    run = execute_response.json()["run"]
+    assert run["status"] == "running"
+    assert run["sweep_session_id"] is not None

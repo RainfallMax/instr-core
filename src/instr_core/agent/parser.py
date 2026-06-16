@@ -132,6 +132,11 @@ def parse_iv_sweep_goal(goal: str) -> ParsedIvSweepIntent:
             "Could not safely parse required IV sweep field(s): " + ", ".join(missing)
         )
 
+    assert start is not None
+    assert stop is not None
+    assert step is not None
+    assert compliance is not None
+
     return ParsedIvSweepIntent(
         start_voltage=start,
         stop_voltage=stop,

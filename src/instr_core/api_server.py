@@ -11,7 +11,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api.dependencies import init_app_state
-from .api.routes import instruments_router, visa_router, validate_router, sweep_router
+from .api.routes import (
+    agent_router,
+    instruments_router,
+    sweep_router,
+    validate_router,
+    visa_router,
+)
 
 logger = logging.getLogger("instr_core.api")
 
@@ -65,6 +71,7 @@ def create_api_app() -> FastAPI:
     app.include_router(visa_router)
     app.include_router(validate_router)
     app.include_router(sweep_router)
+    app.include_router(agent_router)
     return app
 
 
