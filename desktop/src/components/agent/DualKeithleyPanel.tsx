@@ -59,24 +59,24 @@ function DualSweepChart({ run }: { run: DualKeithleyRun | null }) {
         name: t("dual.sourceVoltage"),
         nameLocation: "middle",
         nameGap: 30,
-        axisLine: { lineStyle: { color: "#cdd6f4" } },
-        splitLine: { lineStyle: { color: "#313244" } },
+        axisLine: { lineStyle: { color: "#a1a1aa" } },
+        splitLine: { lineStyle: { color: "#262626" } },
       },
       yAxis: {
         type: "value",
         name: t("dual.meterValue"),
         nameLocation: "middle",
         nameGap: 48,
-        axisLine: { lineStyle: { color: "#cdd6f4" } },
-        splitLine: { lineStyle: { color: "#313244" } },
+        axisLine: { lineStyle: { color: "#a1a1aa" } },
+        splitLine: { lineStyle: { color: "#262626" } },
       },
       series: [{
         type: "line",
         symbol: "circle",
         symbolSize: 6,
         data: points.map((point) => [point.source_voltage, point.meter_value]),
-        lineStyle: { width: 2, color: "#a6e3a1" },
-        itemStyle: { color: "#89b4fa" },
+        lineStyle: { width: 2, color: "#fafafa" },
+        itemStyle: { color: "#fafafa" },
       }],
       graphic:
         points.length === 0
@@ -84,7 +84,7 @@ function DualSweepChart({ run }: { run: DualKeithleyRun | null }) {
               type: "text",
               left: "center",
               top: "middle",
-              style: { text: t("dual.noDualData"), fill: "#6c7086", fontSize: 14 },
+              style: { text: t("dual.noDualData"), fill: "#71717a", fontSize: 14 },
             }
           : undefined,
     });

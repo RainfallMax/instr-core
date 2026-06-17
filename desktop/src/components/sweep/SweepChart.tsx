@@ -41,16 +41,16 @@ export default function SweepChart({ points }: SweepChartProps) {
         name: t("sweep.voltage"),
         nameLocation: "middle",
         nameGap: 30,
-        axisLine: { lineStyle: { color: "#cdd6f4" } },
-        splitLine: { lineStyle: { color: "#313244" } },
+        axisLine: { lineStyle: { color: "#a1a1aa" } },
+        splitLine: { lineStyle: { color: "#262626" } },
       },
       yAxis: {
         type: "value",
         name: t("sweep.current"),
         nameLocation: "middle",
         nameGap: 48,
-        axisLine: { lineStyle: { color: "#cdd6f4" } },
-        splitLine: { lineStyle: { color: "#313244" } },
+        axisLine: { lineStyle: { color: "#a1a1aa" } },
+        splitLine: { lineStyle: { color: "#262626" } },
       },
       series: [
         {
@@ -58,8 +58,8 @@ export default function SweepChart({ points }: SweepChartProps) {
           symbol: "circle",
           symbolSize: 6,
           data: points.map((point) => [point.voltage, point.current]),
-          lineStyle: { width: 2, color: "#89b4fa" },
-          itemStyle: { color: "#89b4fa" },
+          lineStyle: { width: 2, color: "#fafafa" },
+          itemStyle: { color: "#fafafa" },
         },
       ],
       graphic:
@@ -68,7 +68,7 @@ export default function SweepChart({ points }: SweepChartProps) {
               type: "text",
               left: "center",
               top: "middle",
-              style: { text: t("common.noData"), fill: "#6c7086", fontSize: 14 },
+              style: { text: t("common.noData"), fill: "#71717a", fontSize: 14 },
             }
           : undefined,
     });
