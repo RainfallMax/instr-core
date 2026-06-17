@@ -72,51 +72,69 @@ function App() {
     setSelectedCommand(null);
   };
 
+  const navItems: { key: typeof activeView; label: string; description: string }[] = [
+    {
+      key: "main",
+      label: t("app.nav.main"),
+      description: t("app.nav.mainDescription"),
+    },
+    {
+      key: "dual",
+      label: t("app.nav.dual"),
+      description: t("app.nav.dualDescription"),
+    },
+    {
+      key: "sweep",
+      label: t("app.nav.sweep"),
+      description: t("app.nav.sweepDescription"),
+    },
+    {
+      key: "schema",
+      label: t("app.nav.schemas"),
+      description: t("app.nav.schemasDescription"),
+    },
+  ];
+
+  const activeNavItem = navItems.find((item) => item.key === activeView) ?? navItems[0];
+
+  const handleSelectView = (view: typeof activeView) => {
+    if (view === "schema" && !selectedSchemaKey) {
+      return;
+    }
+    setActiveView(view);
+    if (view === "main") {
+      setSelectedSchemaKey(null);
+      setSelectedCommand(null);
+    }
+  };
+
   return (
     <div className="app">
-      <header className="app-header">
-        <div className="header-left">
-          <h1>instr-core</h1>
-          {activeView === "schema" && (
-            <Button variant="outline" size="sm" className="back-button" onClick={handleBackToMain}>
-              {t("app.nav.back")}
-            </Button>
-          )}
+      <aside className="app-sidebar">
+        <div className="brand-block">
+          <div className="brand-mark">ic</div>
+          <div>
+            <h1>instr-core</h1>
+            <p>{t("app.shellTagline")}</p>
+          </div>
         </div>
-        <div className="header-right">
-          <div className="view-toggle">
-            <Button
-              className={activeView === "main" ? "active" : ""}
-              onClick={() => {
-                setActiveView("main");
-                setSelectedSchemaKey(null);
-                setSelectedCommand(null);
-              }}
+        <nav className="sidebar-nav" aria-label={t("app.navLabel")}>
+          {navItems.map((item) => (
+            <button
+              key={item.key}
+              className={activeView === item.key ? "active" : ""}
+              disabled={item.key === "schema" && !selectedSchemaKey}
+              onClick={() => handleSelectView(item.key)}
             >
-              {t("app.nav.main")}
-            </Button>
-            <Button
-              className={activeView === "schema" ? "active" : ""}
-              onClick={() => {
-                if (selectedSchemaKey) {
-                  setActiveView("schema");
-                }
-              }}
-            >
-              {t("app.nav.schemas")}
-            </Button>
-            <Button
-              className={activeView === "sweep" ? "active" : ""}
-              onClick={() => setActiveView("sweep")}
-            >
-              {t("app.nav.sweep")}
-            </Button>
-            <Button
-              className={activeView === "dual" ? "active" : ""}
-              onClick={() => setActiveView("dual")}
-            >
-              {t("app.nav.dual")}
-            </Button>
+              <span>{item.label}</span>
+              <small>{item.description}</small>
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-footer">
+          <div className="sidebar-stat">
+            <span>{t("app.connected")}</span>
+            <strong>{connected.length}</strong>
           </div>
           <select
             className="language-select"
@@ -127,41 +145,62 @@ function App() {
             <option value="zh">{t("language.zh")}</option>
             <option value="en">{t("language.en")}</option>
           </select>
-          <span className="status">{status}</span>
         </div>
-      </header>
+      </aside>
 
-      <main className="app-main">
-        {activeView === "main" ? (
-          <>
-            <SchemaListPanel onSelectSchema={handleSelectSchema} />
-            <VisaResourcePanel onConnect={handleConnect} />
-            <ConnectedPanel
-              connected={connected}
-              selected={selectedInstrument}
-              onSelect={setSelectedInstrument}
-              onBrowseSchema={handleBrowseSchema}
-              onOpenTerminal={handleOpenTerminal}
-            />
-            <ScpiTerminal
-              selectedInstrument={selectedInstrument}
-              connected={connected}
-              onSelectInstrument={setSelectedInstrument}
-            />
-          </>
-        ) : activeView === "schema" ? (
-          <div className="schema-browser-view">
-            <SchemaBrowser
-              schemaKey={selectedSchemaKey ?? undefined}
-              onSelectCommand={handleSelectCommand}
-            />
+      <section className="app-workspace">
+        <header className="workspace-header">
+          <div>
+            <p className="workspace-kicker">{t("app.workspace")}</p>
+            <h2>{activeNavItem.label}</h2>
+            <span>{activeNavItem.description}</span>
           </div>
-        ) : activeView === "sweep" ? (
-          <IvSweepPanel connected={connected} />
-        ) : (
-          <DualKeithleyPanel connected={connected} />
-        )}
-      </main>
+          <div className="workspace-actions">
+            {activeView === "schema" && (
+              <Button variant="outline" size="sm" className="back-button" onClick={handleBackToMain}>
+                {t("app.nav.back")}
+              </Button>
+            )}
+            <span className="status">{status}</span>
+          </div>
+        </header>
+
+        <main className="app-main">
+          {activeView === "main" ? (
+            <div className="main-workbench">
+              <section className="workbench-column">
+                <SchemaListPanel onSelectSchema={handleSelectSchema} />
+                <VisaResourcePanel onConnect={handleConnect} />
+              </section>
+              <section className="workbench-column">
+                <ConnectedPanel
+                  connected={connected}
+                  selected={selectedInstrument}
+                  onSelect={setSelectedInstrument}
+                  onBrowseSchema={handleBrowseSchema}
+                  onOpenTerminal={handleOpenTerminal}
+                />
+                <ScpiTerminal
+                  selectedInstrument={selectedInstrument}
+                  connected={connected}
+                  onSelectInstrument={setSelectedInstrument}
+                />
+              </section>
+            </div>
+          ) : activeView === "schema" ? (
+            <div className="schema-browser-view">
+              <SchemaBrowser
+                schemaKey={selectedSchemaKey ?? undefined}
+                onSelectCommand={handleSelectCommand}
+              />
+            </div>
+          ) : activeView === "sweep" ? (
+            <IvSweepPanel connected={connected} />
+          ) : (
+            <DualKeithleyPanel connected={connected} />
+          )}
+        </main>
+      </section>
 
       {selectedCommand && (
         <CommandDetail

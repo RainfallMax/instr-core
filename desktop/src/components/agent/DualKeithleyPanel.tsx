@@ -271,8 +271,56 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
     }
   };
 
+  const workflowSteps = [
+    {
+      key: "plan",
+      title: t("dual.workflowPlan"),
+      description: t("dual.workflowPlanDescription"),
+      state: run ? "done" : "active",
+    },
+    {
+      key: "validate",
+      title: t("dual.workflowValidate"),
+      description: t("dual.workflowValidateDescription"),
+      state: run?.validation ? (run.validation.valid ? "done" : "blocked") : "idle",
+    },
+    {
+      key: "execute",
+      title: t("dual.workflowExecute"),
+      description: t("dual.workflowExecuteDescription"),
+      state: run?.status === "completed" ? "done" : run?.status === "running" ? "active" : "idle",
+    },
+    {
+      key: "record",
+      title: t("dual.workflowRecord"),
+      description: t("dual.workflowRecordDescription"),
+      state: run?.result ? "done" : "idle",
+    },
+  ];
+
   return (
     <div className="dual-keithley-panel">
+      <section className="agent-workflow panel">
+        <div className="agent-workflow-header">
+          <div>
+            <h2>{t("dual.workflowTitle")}</h2>
+            <p>{t("dual.workflowDescription")}</p>
+          </div>
+          <span>{run?.run_id ?? t("dual.workflowNoRun")}</span>
+        </div>
+        <ol className="workflow-steps">
+          {workflowSteps.map((step, index) => (
+            <li key={step.key} className={`workflow-step ${step.state}`}>
+              <span className="workflow-index">{index + 1}</span>
+              <div>
+                <strong>{step.title}</strong>
+                <small>{step.description}</small>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </section>
+
       <section className="dual-config panel">
         <h2>{t("dual.title")}</h2>
         <label>
