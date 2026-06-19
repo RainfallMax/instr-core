@@ -146,7 +146,8 @@ class TestSafeTurnOffOutput:
     def test_first_attempt_succeeds(self, caplog: pytest.LogCaptureFixture) -> None:
         visa = MockVisaResource()
         with caplog.at_level(logging.INFO):
-            SweepEngine._safe_turn_off_output(visa, "test-session")
+            report = SweepEngine._safe_turn_off_output(visa, "test-session")
+        assert report.safe is True
         assert ":OUTP OFF" in visa._written[0]
         assert any("succeeded" in record.message for record in caplog.records)
 

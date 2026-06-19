@@ -8,6 +8,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from ..api.services.safety_service import TeardownReport, safe_turn_off_output
 from .models import SweepConfig, SweepPoint, SweepSession, SweepStatus
 
 logger = logging.getLogger(__name__)
@@ -168,32 +169,9 @@ class SweepEngine:
                 session.completed_at = datetime.now(timezone.utc).isoformat()
 
     @staticmethod
-    def _safe_turn_off_output(visa: Any, session_id: str) -> None:
-        """Attempt to turn off instrument output with retry and fallback.
-
-        Tries :OUTP OFF twice (with 100ms delay), then falls back to *RST.
-        Logs at CRITICAL level if all attempts fail.
-        Never silently swallows exceptions.
-        """
-        attempts = [
-            (":OUTP OFF", ":OUTP OFF"),
-            (":OUTP OFF", ":OUTP OFF retry"),
-            ("*RST", "*RST fallback"),
-        ]
-        for cmd, label in attempts:
-            try:
-                visa.write(cmd)
-                logger.info("Sweep %s: %s succeeded", session_id, label)
-                return
-            except Exception as exc:
-                logger.warning("Sweep %s: %s failed: %s", session_id, label, exc)
-                if label != "*RST fallback":
-                    time.sleep(0.1)
-        logger.critical(
-            "Sweep %s: CRITICAL — all output-off attempts failed. "
-            "Instrument output may still be ON.",
-            session_id,
-        )
+    def _safe_turn_off_output(visa: Any, session_id: str) -> TeardownReport:
+        """Delegate output shutdown to the shared safety service."""
+        return safe_turn_off_output(visa, session_id)
 
     @staticmethod
     def _generate_voltage_points(config: SweepConfig) -> list[float]:
