@@ -1,4 +1,6 @@
-from .visa_service import get_visa, split_command_argument, update_address_state
-from .sweep_service import validate_sweep_config
+"""Internal API service modules.
 
-__all__ = ["get_visa", "split_command_argument", "update_address_state", "validate_sweep_config"]
+Import concrete services from their defining modules. Keeping package
+initialization side-effect free avoids circular imports through FastAPI
+dependencies.
+"""
