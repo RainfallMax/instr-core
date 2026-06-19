@@ -2,15 +2,23 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..dependencies import (
     _set_address_schema,
     _set_address_state,
+    get_address_ownership,
 )
-from ..models import CommandRequest, CommandResponse, ConnectedInstrument
+from ..models import (
+    CommandRequest,
+    CommandResponse,
+    ConnectedInstrument,
+    EmergencyStopResponse,
+    EmergencyStopResult,
+)
 from ..services.command_preflight import CommandRejected, preflight_hardware_command
 from ..services.visa_service import get_visa, update_address_state
+from ...safety import safe_turn_off_output
 
 logger = logging.getLogger("instr_core.api")
 
@@ -124,3 +132,45 @@ def list_connected_instruments() -> list[ConnectedInstrument]:
     # PyVISA does not track "connected" state; we return empty for now.
     # Future: maintain an in-memory session registry.
     return []
+
+
+@router.post("/emergency-stop", response_model=EmergencyStopResponse)
+def emergency_stop(
+    ownership=Depends(get_address_ownership),
+) -> EmergencyStopResponse:
+    """Attempt emergency teardown for every actively owned address."""
+    results: list[EmergencyStopResult] = []
+    for address, operation_id in ownership.snapshot().items():
+        try:
+            resource = get_visa().open_resource(address)
+            report = safe_turn_off_output(resource, operation_id, address)
+            result = EmergencyStopResult(
+                address=address,
+                operation_id=operation_id,
+                safe=report.safe,
+                attempted_commands=list(report.attempted_commands),
+                successful_command=report.successful_command,
+                errors=list(report.errors),
+            )
+        except Exception as exc:
+            logger.critical(
+                "%s: emergency stop could not access %s: %s",
+                operation_id,
+                address,
+                exc,
+            )
+            result = EmergencyStopResult(
+                address=address,
+                operation_id=operation_id,
+                safe=False,
+                attempted_commands=[],
+                errors=[str(exc)],
+            )
+        results.append(result)
+        if result.safe:
+            ownership.release(address, operation_id)
+
+    return EmergencyStopResponse(
+        all_safe=all(result.safe for result in results),
+        results=results,
+    )

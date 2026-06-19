@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { API_BASE, ConnectedInstrument, CommandDef } from "./types";
+import {
+  API_BASE,
+  ConnectedInstrument,
+  CommandDef,
+  EmergencyStopResponse,
+} from "./types";
 import SchemaListPanel from "./components/SchemaListPanel";
 import VisaResourcePanel from "./components/VisaResourcePanel";
 import ConnectedPanel from "./components/ConnectedPanel";
@@ -20,6 +25,11 @@ function App() {
   const [selectedSchemaKey, setSelectedSchemaKey] = useState<string | null>(null);
   const [selectedCommand, setSelectedCommand] = useState<CommandDef | null>(null);
   const [activeView, setActiveView] = useState<"main" | "schema" | "sweep" | "dual">("main");
+  const [emergencyPending, setEmergencyPending] = useState(false);
+  const [emergencyFeedback, setEmergencyFeedback] = useState<{
+    text: string;
+    safe: boolean;
+  } | null>(null);
 
   // Health check on mount
   useEffect(() => {
@@ -70,6 +80,33 @@ function App() {
 
   const handleCloseCommandDetail = () => {
     setSelectedCommand(null);
+  };
+
+  const handleEmergencyStop = async () => {
+    setEmergencyPending(true);
+    setEmergencyFeedback(null);
+    try {
+      const response = await fetch(`${API_BASE}/visa/emergency-stop`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const result: EmergencyStopResponse = await response.json();
+      setEmergencyFeedback({
+        text: result.all_safe
+          ? t("app.emergencyStopSafe")
+          : t("app.emergencyStopUnsafe"),
+        safe: result.all_safe,
+      });
+    } catch {
+      setEmergencyFeedback({
+        text: t("app.emergencyStopFailed"),
+        safe: false,
+      });
+    } finally {
+      setEmergencyPending(false);
+    }
   };
 
   const navItems: { key: typeof activeView; label: string; description: string }[] = [
@@ -156,10 +193,32 @@ function App() {
             <span>{activeNavItem.description}</span>
           </div>
           <div className="workspace-actions">
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleEmergencyStop}
+              disabled={emergencyPending}
+            >
+              {emergencyPending
+                ? t("app.emergencyStopping")
+                : t("app.emergencyStop")}
+            </Button>
             {activeView === "schema" && (
               <Button variant="outline" size="sm" className="back-button" onClick={handleBackToMain}>
                 {t("app.nav.back")}
               </Button>
+            )}
+            {emergencyFeedback && (
+              <span
+                className={
+                  emergencyFeedback.safe
+                    ? "emergency-feedback safe"
+                    : "emergency-feedback unsafe"
+                }
+                role="status"
+              >
+                {emergencyFeedback.text}
+              </span>
             )}
             <span className="status">{status}</span>
           </div>

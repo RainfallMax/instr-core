@@ -52,6 +52,31 @@ class MockResourceManager:
         return MockResource(self._idn)
 
 
+class EmergencyResource(MockResource):
+    """Resource that can fail every emergency write."""
+
+    def __init__(self, fail_writes: bool = False) -> None:
+        super().__init__()
+        self.fail_writes = fail_writes
+
+    def write(self, cmd: str) -> None:
+        self._written.append(cmd)
+        if self.fail_writes:
+            raise RuntimeError("emergency write failed")
+
+
+class EmergencyResourceManager:
+    """Addressable resources for global emergency-stop tests."""
+
+    def __init__(self, resources: dict[str, EmergencyResource]) -> None:
+        self.resources = resources
+        self.opened: list[str] = []
+
+    def open_resource(self, address: str) -> EmergencyResource:
+        self.opened.append(address)
+        return self.resources[address]
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -432,3 +457,60 @@ class TestSweepOwnership:
 
         assert res.status_code == 409
         mock_get_visa.assert_not_called()
+
+
+class TestEmergencyStop:
+    @patch("instr_core.api_server.pyvisa")
+    def test_emergency_stop_attempts_every_owned_address(
+        self, mock_pyvisa: MagicMock, client: TestClient
+    ) -> None:
+        resources = {
+            "USB0::1": EmergencyResource(),
+            "USB0::2": EmergencyResource(),
+        }
+        rm = EmergencyResourceManager(resources)
+        mock_pyvisa.ResourceManager.return_value = rm
+        ownership = AddressOwnershipRegistry()
+        ownership.acquire("USB0::1", "run-1")
+        ownership.acquire("USB0::2", "run-2")
+        client.app.state.address_ownership = ownership
+
+        res = client.post("/visa/emergency-stop")
+
+        assert res.status_code == 200
+        data = res.json()
+        assert data["all_safe"] is True
+        assert {item["address"] for item in data["results"]} == {
+            "USB0::1",
+            "USB0::2",
+        }
+        assert rm.opened == ["USB0::1", "USB0::2"]
+        assert ownership.snapshot() == {}
+
+    @patch("instr_core.api_server.pyvisa")
+    def test_emergency_stop_continues_after_partial_failure(
+        self, mock_pyvisa: MagicMock, client: TestClient
+    ) -> None:
+        resources = {
+            "USB0::FAIL": EmergencyResource(fail_writes=True),
+            "USB0::SAFE": EmergencyResource(),
+        }
+        mock_pyvisa.ResourceManager.return_value = EmergencyResourceManager(resources)
+        ownership = AddressOwnershipRegistry()
+        ownership.acquire("USB0::FAIL", "run-fail")
+        ownership.acquire("USB0::SAFE", "run-safe")
+        client.app.state.address_ownership = ownership
+
+        res = client.post("/visa/emergency-stop")
+
+        assert res.status_code == 200
+        data = res.json()
+        assert data["all_safe"] is False
+        by_address = {item["address"]: item for item in data["results"]}
+        assert by_address["USB0::FAIL"]["attempted_commands"] == [
+            ":OUTP OFF",
+            ":OUTP OFF",
+            "*RST",
+        ]
+        assert by_address["USB0::SAFE"]["safe"] is True
+        assert ownership.snapshot() == {"USB0::FAIL": "run-fail"}

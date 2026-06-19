@@ -24,6 +24,11 @@ export const resources = {
         navLabel: "Workspace navigation",
         workspace: "Workspace",
         connected: "Connected",
+        emergencyStop: "Emergency Stop",
+        emergencyStopping: "Stopping...",
+        emergencyStopSafe: "All active outputs confirmed safe",
+        emergencyStopUnsafe: "CRITICAL: one or more outputs may still be on",
+        emergencyStopFailed: "Emergency stop request failed",
       },
       common: {
         refresh: "Refresh",
@@ -187,6 +192,11 @@ export const resources = {
         navLabel: "工作区导航",
         workspace: "工作区",
         connected: "已连接",
+        emergencyStop: "紧急停止",
+        emergencyStopping: "正在停止...",
+        emergencyStopSafe: "所有活动输出均已确认安全",
+        emergencyStopUnsafe: "严重警告：一个或多个输出可能仍处于开启状态",
+        emergencyStopFailed: "紧急停止请求失败",
       },
       common: {
         refresh: "刷新",

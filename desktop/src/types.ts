@@ -45,6 +45,20 @@ export interface ValidateResponse {
   suggestions: string[];
 }
 
+export interface EmergencyStopResult {
+  address: string;
+  operation_id: string;
+  safe: boolean;
+  attempted_commands: string[];
+  successful_command?: string;
+  errors: string[];
+}
+
+export interface EmergencyStopResponse {
+  all_safe: boolean;
+  results: EmergencyStopResult[];
+}
+
 // ---------------------------------------------------------------------------
 // Schema types (mirror of Python Pydantic models)
 // ---------------------------------------------------------------------------

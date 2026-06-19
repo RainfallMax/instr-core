@@ -105,6 +105,24 @@ class ConnectedInstrument(BaseModel):
     schema_key: str | None = None
 
 
+class EmergencyStopResult(BaseModel):
+    """Emergency teardown result for one instrument address."""
+
+    address: str
+    operation_id: str
+    safe: bool
+    attempted_commands: list[str]
+    successful_command: str | None = None
+    errors: list[str]
+
+
+class EmergencyStopResponse(BaseModel):
+    """Aggregate result for a global emergency-stop request."""
+
+    all_safe: bool
+    results: list[EmergencyStopResult]
+
+
 class SweepStartRequest(BaseModel):
     """Request to start an IV sweep."""
 

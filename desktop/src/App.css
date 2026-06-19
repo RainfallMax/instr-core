@@ -305,6 +305,19 @@ pre,
   white-space: nowrap;
 }
 
+.emergency-feedback {
+  max-width: 320px;
+  font-size: 0.72rem;
+}
+
+.emergency-feedback.safe {
+  color: var(--success);
+}
+
+.emergency-feedback.unsafe {
+  color: var(--danger);
+}
+
 .app-main {
   flex: 1;
   display: grid;
