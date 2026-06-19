@@ -11,7 +11,7 @@ from ..dependencies import _get_address_schema, _update_address_state_entry
 logger = logging.getLogger("instr_core.api")
 
 _rm: Any | None = None  # pyvisa ResourceManager, imported lazily
-_rm_source_id: int | None = None
+_rm_source: Any | None = None
 
 
 def import_pyvisa() -> Any:
@@ -28,7 +28,7 @@ def import_pyvisa() -> Any:
 
 def get_visa() -> Any:
     """Lazy-import pyvisa so the API server can start without it installed."""
-    global _rm, _rm_source_id
+    global _rm, _rm_source
     try:
         pyvisa_module = import_pyvisa()
     except ImportError:
@@ -36,11 +36,10 @@ def get_visa() -> Any:
             "pyvisa is not installed. Install it with: uv pip install pyvisa"
         )
 
-    source_id = id(pyvisa_module)
-    if _rm is None or _rm_source_id != source_id:
+    if _rm is None or _rm_source is not pyvisa_module:
         try:
             _rm = pyvisa_module.ResourceManager()
-            _rm_source_id = source_id
+            _rm_source = pyvisa_module
             logger.info("PyVISA ResourceManager initialized")
         except ImportError:
             raise RuntimeError(
