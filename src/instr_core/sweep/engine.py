@@ -6,7 +6,7 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from ..safety import TeardownReport, safe_turn_off_output
 from .models import SweepConfig, SweepPoint, SweepSession, SweepStatus
@@ -30,6 +30,7 @@ class SweepEngine:
         session: SweepSession,
         registry: Any,  # Registry
         visa_resource: Any,  # pyvisa.resources.Resource
+        on_complete: Callable[[SweepSession], None] | None = None,
     ) -> None:
         """Start a sweep in a background thread.
 
@@ -51,7 +52,7 @@ class SweepEngine:
 
         thread = threading.Thread(
             target=self._run_sweep,
-            args=(session, registry, visa_resource),
+            args=(session, registry, visa_resource, on_complete),
             daemon=True,
         )
         session._engine_thread = thread
@@ -88,6 +89,7 @@ class SweepEngine:
         session: SweepSession,
         registry: Any,
         visa: Any,
+        on_complete: Callable[[SweepSession], None] | None = None,
     ) -> None:
         """The actual sweep logic running in a background thread."""
         try:
@@ -167,6 +169,15 @@ class SweepEngine:
                 session.status = SweepStatus.ERROR
                 session.error_message = str(exc)
                 session.completed_at = datetime.now(timezone.utc).isoformat()
+        finally:
+            if on_complete is not None:
+                try:
+                    on_complete(session)
+                except Exception:
+                    logger.exception(
+                        "Sweep %s completion callback failed",
+                        session.session_id,
+                    )
 
     @staticmethod
     def _safe_turn_off_output(visa: Any, session_id: str) -> TeardownReport:

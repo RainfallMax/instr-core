@@ -156,3 +156,7 @@ def test_agent_execute_starts_sweep_after_valid_dry_run(mock_pyvisa: MagicMock) 
     run = execute_response.json()["run"]
     assert run["status"] == "running"
     assert run["sweep_session_id"] is not None
+    session = client.app.state.sweep_engine.get_session(run["sweep_session_id"])
+    assert session is not None
+    session._engine_thread.join(timeout=2)
+    assert client.app.state.address_ownership.snapshot() == {}

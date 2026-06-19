@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from instr_core.api.services.ownership_service import AddressOwnershipRegistry
 from instr_core.api_server import create_api_app
 from instr_core.validator import Registry
 
@@ -400,3 +401,34 @@ class TestVisaResources:
         assert res.status_code == 200
         data = res.json()
         assert "USB0::0x05E6::0x2600::INSTR" in data
+
+
+class TestSweepOwnership:
+    @patch("instr_core.api.services.visa_service.get_visa")
+    def test_owned_address_rejects_sweep_before_visa(
+        self, mock_get_visa: MagicMock, client: TestClient
+    ) -> None:
+        address = "USB0::KNOWN::INSTR"
+        client.app.state.address_to_schema[address] = "keithley/smu/2600"
+        ownership = AddressOwnershipRegistry()
+        ownership.acquire(address, "existing-run")
+        client.app.state.address_ownership = ownership
+
+        res = client.post(
+            "/sweep/start",
+            json={
+                "instrument_key": "keithley/smu/2600",
+                "address": address,
+                "config": {
+                    "start_voltage": 0,
+                    "stop_voltage": 1,
+                    "step": 0.5,
+                    "compliance": 0.01,
+                    "delay_ms": 0,
+                    "direction": "UP",
+                },
+            },
+        )
+
+        assert res.status_code == 409
+        mock_get_visa.assert_not_called()

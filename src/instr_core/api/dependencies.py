@@ -11,6 +11,7 @@ from ..agent.llm import StructuredPlanner, planner_from_env
 from ..agent.store import AgentRunStore
 from ..sweep import SweepEngine
 from ..validator import Registry
+from .services.ownership_service import AddressOwnershipRegistry
 
 logger = logging.getLogger("instr_core.api")
 
@@ -34,6 +35,7 @@ def init_app_state(app) -> None:
     app.state.address_lock = threading.RLock()
     app.state.address_to_schema = {}
     app.state.address_state = {}
+    app.state.address_ownership = AddressOwnershipRegistry()
 
 
 def get_registry(request: Request) -> Registry:
@@ -57,6 +59,15 @@ def get_agent_store(request: Request) -> AgentRunStore:
 def get_llm_planner(request: Request) -> StructuredPlanner | None:
     """FastAPI dependency: get the configured structured LLM planner."""
     return getattr(request.app.state, "llm_planner", None)
+
+
+def get_address_ownership(request: Request) -> AddressOwnershipRegistry:
+    """Get the application-wide instrument address ownership registry."""
+    ownership = getattr(request.app.state, "address_ownership", None)
+    if ownership is None:
+        ownership = AddressOwnershipRegistry()
+        request.app.state.address_ownership = ownership
+    return ownership
 
 
 def _load_registry_paths() -> list[str]:

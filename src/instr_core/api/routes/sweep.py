@@ -10,7 +10,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from ..dependencies import get_registry, get_sweep_engine
+from ..dependencies import (
+    get_address_ownership,
+    get_registry,
+    get_sweep_engine,
+)
 from ..models import (
     SweepStartRequest,
     SweepStartResponse,
@@ -31,6 +35,7 @@ def sweep_start(
     request: Request,
     registry=Depends(get_registry),
     sweep_engine=Depends(get_sweep_engine),
+    ownership=Depends(get_address_ownership),
 ) -> SweepStartResponse:
     """Start a new IV sweep session."""
     # 1. Validate instrument_key exists in registry
@@ -74,12 +79,19 @@ def sweep_start(
         status=SweepStatus.IDLE,
     )
 
+    if not ownership.acquire(req.address, session_id):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Address '{req.address}' is already owned by an active operation",
+        )
+
     # 6. Get VISA resource
     from ..services.visa_service import get_visa
     try:
         rm = get_visa()
         visa_resource = rm.open_resource(req.address)
     except Exception as exc:
+        ownership.release(req.address, session_id)
         raise HTTPException(
             status_code=500,
             detail=f"Failed to open VISA resource: {exc}"
@@ -87,8 +99,14 @@ def sweep_start(
 
     # 7. Start sweep in background thread
     try:
-        sweep_engine.start_sweep(session, registry, visa_resource)
+        sweep_engine.start_sweep(
+            session,
+            registry,
+            visa_resource,
+            on_complete=lambda _: ownership.release(req.address, session_id),
+        )
     except Exception as exc:
+        ownership.release(req.address, session_id)
         raise HTTPException(
             status_code=500,
             detail=f"Failed to start sweep: {exc}"

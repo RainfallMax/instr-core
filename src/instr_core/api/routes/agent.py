@@ -36,6 +36,7 @@ from ...agent.store import AgentRunStore
 from ...sweep import SweepSession, SweepStatus
 from ..dependencies import (
     _get_address_schema,
+    get_address_ownership,
     get_agent_store,
     get_llm_planner,
     get_registry,
@@ -100,6 +101,7 @@ def execute(
     store: AgentRunStore = Depends(get_agent_store),
     registry=Depends(get_registry),
     sweep_engine=Depends(get_sweep_engine),
+    ownership=Depends(get_address_ownership),
 ) -> AgentExecuteResponse:
     """Execute a validated agent plan after explicit confirmation."""
     run = store.get(req.run_id)
@@ -111,6 +113,12 @@ def execute(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    if not ownership.acquire(run.plan.address, run.run_id):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Address '{run.plan.address}' is already owned by an active operation",
+        )
+
     try:
         visa_resource = get_visa().open_resource(run.plan.address)
         session = SweepSession(
@@ -120,8 +128,14 @@ def execute(
             config=run.plan.config,
             status=SweepStatus.IDLE,
         )
-        sweep_engine.start_sweep(session, registry, visa_resource)
+        sweep_engine.start_sweep(
+            session,
+            registry,
+            visa_resource,
+            on_complete=lambda _: ownership.release(run.plan.address, run.run_id),
+        )
     except Exception as exc:
+        ownership.release(run.plan.address, run.run_id)
         run.status = AgentRunStatus.FAILED
         run.error_message = str(exc)
         store.update(run)
@@ -251,6 +265,7 @@ def dry_run_multi(
 def execute_multi(
     req: DualKeithleyExecuteRequest,
     store: AgentRunStore = Depends(get_agent_store),
+    ownership=Depends(get_address_ownership),
 ) -> DualKeithleyPlanResponse:
     """Execute a confirmed dual-device software-synchronized sweep."""
     run = store.get(req.run_id)
@@ -263,13 +278,26 @@ def execute_multi(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    addresses = [run.plan.source.address, run.plan.meter.address]
+    if not ownership.acquire_many(addresses, run.run_id):
+        raise HTTPException(
+            status_code=409,
+            detail="One or more instrument addresses are already owned",
+        )
+
     try:
-        run = execute_dual_keithley_run(run, get_visa())
-    except Exception as exc:
-        run.status = AgentRunStatus.FAILED
-        run.error_message = str(exc)
-        store.update(run)
-        raise HTTPException(status_code=500, detail=f"Execution failed: {exc}") from exc
+        try:
+            run = execute_dual_keithley_run(run, get_visa())
+        except Exception as exc:
+            run.status = AgentRunStatus.FAILED
+            run.error_message = str(exc)
+            store.update(run)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Execution failed: {exc}",
+            ) from exc
+    finally:
+        ownership.release_many(addresses, run.run_id)
     store.update(run)
     return DualKeithleyPlanResponse(run=run)
 

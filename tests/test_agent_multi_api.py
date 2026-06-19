@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from instr_core.agent.models import DualKeithleyPlanRequest
 from instr_core.agent.store import AgentRunStore
+from instr_core.api.services.ownership_service import AddressOwnershipRegistry
 from instr_core.api_server import create_api_app
 from instr_core.sweep import SweepEngine
 from instr_core.validator import Registry
@@ -284,6 +285,7 @@ def test_multi_agent_execute_records_points_and_turns_output_off(
     assert run["result"]["summary"]["points"] == 3
     assert rm.resources["USB0::SMU::INSTR"].written[-1] == ":OUTP OFF"
     assert rm.resources["USB0::DMM::INSTR"].query_log.count(":READ?") == 3
+    assert client.app.state.address_ownership.snapshot() == {}
 
 
 @patch("instr_core.api_server.pyvisa")
@@ -309,6 +311,28 @@ def test_multi_agent_failure_preserves_error_and_retries_shutdown(
     assert "measurement failed" in stored["error_message"]
     source = rm.resources["USB0::SMU::INSTR"]
     assert source.written[-3:] == [":OUTP OFF", ":OUTP OFF", "*RST"]
+    assert client.app.state.address_ownership.snapshot() == {}
+
+
+@patch("instr_core.api.routes.agent.get_visa")
+def test_multi_agent_owned_address_rejects_before_visa(
+    mock_get_visa: MagicMock,
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    client.app.state.address_ownership = AddressOwnershipRegistry()
+    client.app.state.address_ownership.acquire("USB0::DMM::INSTR", "existing-run")
+    plan_response = client.post("/agent/multi/plan", json=plan_payload())
+    run_id = plan_response.json()["run"]["run_id"]
+    client.post("/agent/multi/dry-run", json={"run_id": run_id})
+
+    execute_response = client.post(
+        "/agent/multi/execute",
+        json={"run_id": run_id, "confirm": True},
+    )
+
+    assert execute_response.status_code == 409
+    mock_get_visa.assert_not_called()
 
 
 @patch("instr_core.api_server.pyvisa")
