@@ -72,6 +72,10 @@ Instead of dumping hundreds of pages of English PDF manuals on the AI and lettin
 
 When an AI proposes an experiment or a SCPI command, instr-core validates it first. It checks: Is this voltage out of range? Has compliance been set? Is output currently on? Does this command violate the instrument state machine? If the plan is unsafe, it returns issues and suggestions instead of touching hardware.
 
+Validation fails closed: if no trusted instrument Schema can be resolved, the
+command is reported as invalid. Connect a recognized instrument or provide an
+explicit Schema key before attempting hardware writes.
+
 **Confirmed execution only:**
 
 Agent plans start in `dry_run` mode. Real execution requires an explicit confirmation flag and a valid dry-run result. This is the core physical-safety boundary: AI may plan, but it cannot silently energize hardware.

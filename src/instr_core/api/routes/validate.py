@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
-from ..dependencies import get_registry
+from ..dependencies import _get_address_schema, get_registry
 from ..models import ValidateRequest, ValidateResponse
 from ..services.visa_service import split_command_argument
 from ...validator import validate_command
@@ -11,7 +11,11 @@ router = APIRouter(tags=["validate"])
 
 
 @router.post("/validate/command", response_model=ValidateResponse)
-def validate_command_endpoint(req: ValidateRequest, registry = Depends(get_registry)) -> ValidateResponse:
+def validate_command_endpoint(
+    req: ValidateRequest,
+    request: Request,
+    registry=Depends(get_registry),
+) -> ValidateResponse:
     """Validate a command against the instrument's schema.
 
     Unlike /visa/command which requires a hardware connection,
@@ -22,22 +26,19 @@ def validate_command_endpoint(req: ValidateRequest, registry = Depends(get_regis
     if req.instrument is not None:
         schema_key = req.instrument
     elif req.address is not None:
-        # We need a request object to access app.state, but this endpoint
-        # doesn't receive one. Use a workaround via Depends if needed.
-        # For now, we keep backward compatibility by not supporting
-        # address-based schema lookup in the standalone endpoint.
-        pass
+        schema_key = _get_address_schema(request, req.address)
 
     if schema_key is None:
-        # Graceful degradation: no schema available, return empty pass
         return ValidateResponse(
             instrument=req.instrument,
             address=req.address,
             command=req.command,
             argument=req.argument,
-            valid=True,
+            valid=False,
             issues=["No schema available for validation"],
-            suggestions=["Connect instrument or provide explicit instrument key"],
+            suggestions=[
+                "Connect the instrument or provide explicit instrument key"
+            ],
         )
 
     try:

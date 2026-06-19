@@ -187,17 +187,33 @@ class TestValidateCommand:
         )
         assert res.status_code == 404
 
-    def test_no_schema_graceful_degradation(self, client: TestClient) -> None:
-        """When no instrument or address is provided, return a soft pass
-        with an informational issue."""
+    def test_no_schema_fails_closed(self, client: TestClient) -> None:
         res = client.post(
             "/validate/command",
             json={"command": ":SOUR:VOLT 10"},
         )
         assert res.status_code == 200
         data = res.json()
-        assert data["valid"] is True
-        assert any("No schema available" in i for i in data["issues"])
+        assert data["valid"] is False
+        assert any("No schema available" in issue for issue in data["issues"])
+        assert any(
+            "provide explicit instrument" in item.lower()
+            for item in data["suggestions"]
+        )
+
+    def test_address_resolves_connected_schema(self, client: TestClient) -> None:
+        client.app.state.address_to_schema["USB0::KNOWN::INSTR"] = "keithley/smu/2600"
+        res = client.post(
+            "/validate/command",
+            json={
+                "address": "USB0::KNOWN::INSTR",
+                "command": ":SOUR:FUNC VOLT",
+                "current_state": {"output": "OFF"},
+            },
+        )
+        assert res.status_code == 200
+        assert res.json()["valid"] is True
+        assert res.json()["instrument"] == "keithley/smu/2600"
 
     def test_compliance_required_blocked(self, client: TestClient) -> None:
         """Enabling output without compliance should fail validation."""
