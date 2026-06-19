@@ -1,6 +1,6 @@
 # P0 Hardware Safety Closure Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make every hardware write fail closed, validate before VISA access, reuse a typed emergency teardown path, prevent concurrent address ownership, and expose a global emergency stop.
 
@@ -13,7 +13,7 @@
 ## File Structure
 
 - Create `src/instr_core/api/services/command_preflight.py` — pure command classification and validation with no VISA access.
-- Create `src/instr_core/api/services/safety_service.py` — typed emergency teardown report and retry/fallback logic.
+- Create `src/instr_core/safety.py` — typed emergency teardown report and retry/fallback logic.
 - Create `src/instr_core/api/services/ownership_service.py` — thread-safe address ownership registry.
 - Modify `src/instr_core/api/routes/validate.py` — address-aware fail-closed standalone validation.
 - Modify `src/instr_core/api/routes/visa.py` — run preflight before `get_visa()` and block validation bypass.
@@ -38,7 +38,7 @@
 - Modify: `README.md`
 - Modify: `README_zh-CN.md`
 
-- [ ] **Step 1: Change the no-schema test to require rejection**
+- [x] **Step 1: Change the no-schema test to require rejection**
 
 Replace the existing soft-pass test with:
 
@@ -55,7 +55,7 @@ def test_no_schema_fails_closed(self, client: TestClient) -> None:
     assert any("provide explicit instrument" in item.lower() for item in data["suggestions"])
 ```
 
-- [ ] **Step 2: Add address-based schema resolution coverage**
+- [x] **Step 2: Add address-based schema resolution coverage**
 
 Add:
 
@@ -75,7 +75,7 @@ def test_address_resolves_connected_schema(self, client: TestClient) -> None:
     assert res.json()["instrument"] == "keithley/smu/2600"
 ```
 
-- [ ] **Step 3: Run the tests and verify the intended failures**
+- [x] **Step 3: Run the tests and verify the intended failures**
 
 Run:
 
@@ -85,7 +85,7 @@ uv run pytest tests/test_api_server.py::TestValidateCommand::test_no_schema_fail
 
 Expected: the first test fails because `valid` is currently `True`; the second fails because address lookup is not implemented.
 
-- [ ] **Step 4: Implement request-aware schema resolution**
+- [x] **Step 4: Implement request-aware schema resolution**
 
 Change the route signature to receive `Request`, resolve `_get_address_schema`
 when `instrument` is absent and `address` is present, and return:
@@ -104,7 +104,7 @@ return ValidateResponse(
 
 The explicit `instrument` field continues to take precedence over the address mapping.
 
-- [ ] **Step 5: Run focused validation tests**
+- [x] **Step 5: Run focused validation tests**
 
 Run:
 
@@ -114,13 +114,13 @@ uv run pytest tests/test_api_server.py::TestValidateCommand -v
 
 Expected: all validation endpoint tests pass.
 
-- [ ] **Step 6: Update user documentation**
+- [x] **Step 6: Update user documentation**
 
 Replace statements that describe no-schema validation as a permissive fallback
 with the invariant that unverifiable writes are rejected and users must connect
 a recognized instrument or provide a schema key.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add tests/test_api_server.py src/instr_core/api/routes/validate.py README.md README_zh-CN.md
@@ -134,7 +134,7 @@ git commit -m "fix: fail closed without validation schema"
 - Modify: `src/instr_core/api/routes/visa.py`
 - Modify: `tests/test_api_server.py`
 
-- [ ] **Step 1: Add a regression test proving rejected writes never touch VISA**
+- [x] **Step 1: Add a regression test proving rejected writes never touch VISA**
 
 Add:
 
@@ -157,7 +157,7 @@ def test_unknown_schema_write_is_rejected_before_visa(
     mock_get_visa.assert_not_called()
 ```
 
-- [ ] **Step 2: Add validation-bypass rejection coverage**
+- [x] **Step 2: Add validation-bypass rejection coverage**
 
 Add:
 
@@ -180,7 +180,7 @@ def test_hardware_write_cannot_disable_validation(
     mock_get_visa.assert_not_called()
 ```
 
-- [ ] **Step 3: Add discovery-query allowlist coverage**
+- [x] **Step 3: Add discovery-query allowlist coverage**
 
 Add:
 
@@ -208,7 +208,7 @@ def test_idn_query_is_allowed_without_schema(
 Also add a test showing an arbitrary unknown query such as `:READ?` returns
 422 before VISA access.
 
-- [ ] **Step 4: Run tests and verify they fail for the missing boundary**
+- [x] **Step 4: Run tests and verify they fail for the missing boundary**
 
 Run:
 
@@ -219,7 +219,7 @@ uv run pytest tests/test_api_server.py::TestVisaCommand -v
 Expected: unknown-schema writes and validation bypass currently reach VISA;
 arbitrary queries are currently allowed.
 
-- [ ] **Step 5: Implement pure preflight**
+- [x] **Step 5: Implement pure preflight**
 
 Create:
 
@@ -309,7 +309,7 @@ def preflight_hardware_command(
     )
 ```
 
-- [ ] **Step 6: Call preflight before `get_visa()`**
+- [x] **Step 6: Call preflight before `get_visa()`**
 
 In `send_command_endpoint`, call `preflight_hardware_command` first. Translate
 `CommandRejected` to `HTTPException(status_code=422, detail=str(exc))`. Only
@@ -318,7 +318,7 @@ after successful preflight call `get_visa()` and `open_resource()`.
 Use the preflight descriptor for query detection, response metadata, and state
 updates. Remove the old permissive query/write branch.
 
-- [ ] **Step 7: Run focused tests**
+- [x] **Step 7: Run focused tests**
 
 Run:
 
@@ -329,7 +329,7 @@ uv run pytest tests/test_api_server.py::TestVisaCommand -v
 Expected: all command boundary tests pass and mocked rejected cases prove no
 VISA access.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/instr_core/api/services/command_preflight.py src/instr_core/api/routes/visa.py tests/test_api_server.py
@@ -339,12 +339,12 @@ git commit -m "fix: validate commands before visa access"
 ### Task 3: Extract Typed Emergency Teardown
 
 **Files:**
-- Create: `src/instr_core/api/services/safety_service.py`
+- Create: `src/instr_core/safety.py`
 - Create: `tests/test_safety_service.py`
 - Modify: `src/instr_core/sweep/engine.py`
 - Modify: `tests/test_sweep_engine.py`
 
-- [ ] **Step 1: Write focused teardown tests**
+- [x] **Step 1: Write focused teardown tests**
 
 Create tests for:
 
@@ -358,7 +358,7 @@ def test_teardown_reports_critical_failure() -> None: ...
 Each test asserts the exact command sequence and a returned report containing:
 `safe`, `attempted_commands`, `successful_command`, and `errors`.
 
-- [ ] **Step 2: Run the tests and verify import failure**
+- [x] **Step 2: Run the tests and verify import failure**
 
 Run:
 
@@ -368,7 +368,7 @@ uv run pytest tests/test_safety_service.py -v
 
 Expected: collection fails because `safety_service` does not exist.
 
-- [ ] **Step 3: Implement the typed service**
+- [x] **Step 3: Implement the typed service**
 
 Create:
 
@@ -418,7 +418,7 @@ def safe_turn_off_output(
     return TeardownReport(False, tuple(attempted), None, tuple(errors))
 ```
 
-- [ ] **Step 4: Run focused service tests**
+- [x] **Step 4: Run focused service tests**
 
 Run:
 
@@ -428,7 +428,7 @@ uv run pytest tests/test_safety_service.py -v
 
 Expected: all teardown service tests pass.
 
-- [ ] **Step 5: Delegate `SweepEngine` teardown**
+- [x] **Step 5: Delegate `SweepEngine` teardown**
 
 Replace `_safe_turn_off_output` internals with a compatibility wrapper:
 
@@ -440,7 +440,7 @@ def _safe_turn_off_output(visa: Any, session_id: str) -> TeardownReport:
 
 Keep existing tests and add an assertion that a report is returned.
 
-- [ ] **Step 6: Run sweep tests**
+- [x] **Step 6: Run sweep tests**
 
 Run:
 
@@ -450,10 +450,10 @@ uv run pytest tests/test_safety_service.py tests/test_sweep_engine.py -v
 
 Expected: all service and sweep tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
-git add src/instr_core/api/services/safety_service.py src/instr_core/sweep/engine.py tests/test_safety_service.py tests/test_sweep_engine.py
+git add src/instr_core/safety.py src/instr_core/sweep/engine.py tests/test_safety_service.py tests/test_sweep_engine.py
 git commit -m "refactor: share typed emergency teardown"
 ```
 
@@ -464,12 +464,12 @@ git commit -m "refactor: share typed emergency teardown"
 - Modify: `src/instr_core/api/routes/agent.py`
 - Modify: `tests/test_agent_multi_api.py`
 
-- [ ] **Step 1: Add a failure resource that rejects output-off**
+- [x] **Step 1: Add a failure resource that rejects output-off**
 
 Add a mock source resource whose measurement loop fails and whose first two
 `:OUTP OFF` writes fail. Record all attempted commands.
 
-- [ ] **Step 2: Add an API regression test**
+- [x] **Step 2: Add an API regression test**
 
 Add a test that plans, dry-runs, and executes the dual workflow, then asserts:
 
@@ -481,12 +481,12 @@ assert "measurement failed" in stored["error_message"]
 assert source.attempted_shutdown == [":OUTP OFF", ":OUTP OFF", "*RST"]
 ```
 
-- [ ] **Step 3: Run the test and verify current unsafe failure**
+- [x] **Step 3: Run the test and verify current unsafe failure**
 
 Run the new test directly. Expected: current `finally: source.write(":OUTP OFF")`
 replaces the original error and does not retry or reset.
 
-- [ ] **Step 4: Use shared teardown without masking the original error**
+- [x] **Step 4: Use shared teardown without masking the original error**
 
 Structure execution as:
 
@@ -511,7 +511,7 @@ if not teardown.safe:
 
 Do not mark the run completed until teardown is safe.
 
-- [ ] **Step 5: Run dual-agent tests**
+- [x] **Step 5: Run dual-agent tests**
 
 Run:
 
@@ -522,7 +522,7 @@ uv run pytest tests/test_agent_multi_api.py -v
 Expected: all multi-agent tests pass, including preservation of the original
 execution failure.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/instr_core/agent/planner.py src/instr_core/api/routes/agent.py tests/test_agent_multi_api.py
@@ -540,7 +540,7 @@ git commit -m "fix: harden dual-instrument teardown"
 - Modify: `tests/test_api_server.py`
 - Modify: `tests/test_agent_multi_api.py`
 
-- [ ] **Step 1: Write ownership service tests**
+- [x] **Step 1: Write ownership service tests**
 
 Cover:
 
@@ -551,7 +551,7 @@ def test_same_owner_can_release_only_its_address() -> None: ...
 def test_concurrent_acquire_has_one_winner() -> None: ...
 ```
 
-- [ ] **Step 2: Verify tests fail because the service is absent**
+- [x] **Step 2: Verify tests fail because the service is absent**
 
 Run:
 
@@ -561,18 +561,18 @@ uv run pytest tests/test_ownership_service.py -v
 
 Expected: import failure.
 
-- [ ] **Step 3: Implement ownership registry**
+- [x] **Step 3: Implement ownership registry**
 
 Create an `AddressOwnershipRegistry` with an internal `RLock`, `acquire`,
 `acquire_many`, `release`, `release_many`, and `snapshot`. `acquire_many`
 checks all addresses before mutating so partial acquisition cannot occur.
 
-- [ ] **Step 4: Initialize ownership in app state**
+- [x] **Step 4: Initialize ownership in app state**
 
 Set `app.state.address_ownership = AddressOwnershipRegistry()` in
 `init_app_state` and add `get_address_ownership`.
 
-- [ ] **Step 5: Add API conflict tests**
+- [x] **Step 5: Add API conflict tests**
 
 Seed ownership in tests and assert:
 
@@ -581,7 +581,7 @@ Seed ownership in tests and assert:
   either source or meter is owned.
 - Ownership is released after completion and after error teardown.
 
-- [ ] **Step 6: Run tests and verify conflict cases fail**
+- [x] **Step 6: Run tests and verify conflict cases fail**
 
 Run:
 
@@ -592,14 +592,14 @@ uv run pytest tests/test_ownership_service.py tests/test_api_server.py tests/tes
 Expected: service tests pass after implementation; API conflict cases fail until
 routes use the registry.
 
-- [ ] **Step 7: Gate execution routes**
+- [x] **Step 7: Gate execution routes**
 
 Acquire all required addresses before VISA access. Return HTTP 409 when
 acquisition fails. Release ownership from execution completion/error callbacks;
 for synchronous dual execution, use `finally`. For background sweeps, add a
 completion callback to `SweepEngine.start_sweep`.
 
-- [ ] **Step 8: Run focused ownership tests**
+- [x] **Step 8: Run focused ownership tests**
 
 Run:
 
@@ -609,7 +609,7 @@ uv run pytest tests/test_ownership_service.py tests/test_api_server.py tests/tes
 
 Expected: all ownership and affected API tests pass.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/instr_core/api/services/ownership_service.py src/instr_core/api/dependencies.py src/instr_core/api/routes/sweep.py src/instr_core/api/routes/agent.py tests/test_ownership_service.py tests/test_api_server.py tests/test_agent_multi_api.py
@@ -628,7 +628,7 @@ git commit -m "feat: prevent concurrent instrument ownership"
 - Modify: `desktop/src/i18n.ts`
 - Modify: `desktop/src/App.css`
 
-- [ ] **Step 1: Add backend emergency-stop API tests**
+- [x] **Step 1: Add backend emergency-stop API tests**
 
 Create two owned mock resources and assert `POST /visa/emergency-stop`:
 
@@ -638,11 +638,11 @@ Create two owned mock resources and assert `POST /visa/emergency-stop`:
 - includes `all_safe=false` for partial failure;
 - releases only addresses whose teardown was confirmed safe.
 
-- [ ] **Step 2: Run the tests and verify 404**
+- [x] **Step 2: Run the tests and verify 404**
 
 Run the new tests directly. Expected: 404 because the endpoint is absent.
 
-- [ ] **Step 3: Add typed response models**
+- [x] **Step 3: Add typed response models**
 
 Add Pydantic models:
 
@@ -661,13 +661,13 @@ class EmergencyStopResponse(BaseModel):
     results: list[EmergencyStopResult]
 ```
 
-- [ ] **Step 4: Implement emergency-stop endpoint**
+- [x] **Step 4: Implement emergency-stop endpoint**
 
 Snapshot ownership, open each owned resource, invoke `safe_turn_off_output`,
 collect all results, and continue after per-device errors. Release safe
 addresses. Never raise before all addresses have been attempted.
 
-- [ ] **Step 5: Run backend tests**
+- [x] **Step 5: Run backend tests**
 
 Run:
 
@@ -677,14 +677,14 @@ uv run pytest tests/test_api_server.py -v
 
 Expected: all API tests pass.
 
-- [ ] **Step 6: Add desktop Emergency Stop**
+- [x] **Step 6: Add desktop Emergency Stop**
 
 Add a persistent red Emergency Stop button to the application header. It calls
 `POST /visa/emergency-stop`, disables while pending, and displays a success or
 critical partial-failure message. Add English and Chinese translations and
 typed response interfaces.
 
-- [ ] **Step 7: Run frontend build**
+- [x] **Step 7: Run frontend build**
 
 Run:
 
@@ -694,7 +694,7 @@ cd desktop && npm run build
 
 Expected: TypeScript and Vite build pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/instr_core/api/models.py src/instr_core/api/routes/visa.py src/instr_core/api/services/ownership_service.py tests/test_api_server.py desktop/src/types.ts desktop/src/App.tsx desktop/src/i18n.ts desktop/src/App.css
@@ -708,17 +708,17 @@ git commit -m "feat: add global emergency stop"
 - Modify: `docs/PRD_SECURITY_FIX_001.md`
 - Modify: `docs/superpowers/plans/2026-06-20-p0-hardware-safety-closure.md`
 
-- [ ] **Step 1: Correct permissive no-schema documentation**
+- [x] **Step 1: Correct permissive no-schema documentation**
 
 Change IV sweep behavior from “allow without validation” to “reject start until
 a trusted schema is matched.”
 
-- [ ] **Step 2: Record implementation evidence**
+- [x] **Step 2: Record implementation evidence**
 
 Check completed task boxes and append the exact focused verification output and
 mock-only hardware qualification note. Do not claim real-device qualification.
 
-- [ ] **Step 3: Run Python quality gates**
+- [x] **Step 3: Run Python quality gates**
 
 Run:
 
@@ -730,7 +730,7 @@ uv run pytest tests/ -v
 
 Expected: zero Ruff errors, zero Mypy errors, all tests pass.
 
-- [ ] **Step 4: Run desktop and Rust quality gates**
+- [x] **Step 4: Run desktop and Rust quality gates**
 
 Run:
 
@@ -741,7 +741,7 @@ cd desktop/src-tauri && cargo fmt --check && cargo clippy -- -D warnings && carg
 
 Expected: frontend build and all Rust checks pass.
 
-- [ ] **Step 5: Audit P0 invariants**
+- [x] **Step 5: Audit P0 invariants**
 
 Verify with source inspection and tests:
 
@@ -753,9 +753,57 @@ Verify with source inspection and tests:
 - owned addresses reject concurrent execution;
 - emergency stop attempts every active address.
 
-- [ ] **Step 6: Commit final P0 evidence**
+- [x] **Step 6: Commit final P0 evidence**
 
 ```bash
 git add docs/PRD_IVSWEEP.md docs/PRD_SECURITY_FIX_001.md docs/superpowers/plans/2026-06-20-p0-hardware-safety-closure.md
 git commit -m "docs: record p0 safety closure"
 ```
+
+## Completion Evidence
+
+Completed on 2026-06-20 in branch `codex/p0-hardware-safety`.
+
+### Automated verification
+
+```text
+uv run ruff check src tests
+All checks passed!
+
+uv run mypy src
+Success: no issues found in 32 source files
+
+uv run pytest tests/ -v
+184 passed in 10.23s
+
+cd desktop && npm run build
+TypeScript and Vite production build completed successfully.
+
+cd desktop/src-tauri
+cargo fmt --check
+cargo clippy -- -D warnings
+cargo test
+All commands completed with exit code 0; Rust tests reported 0 failures.
+```
+
+### Safety invariant evidence
+
+- `tests/test_api_server.py::TestVisaCommand` proves unknown-schema writes,
+  validation bypass, and non-allowlisted unknown queries are rejected before
+  `get_visa` is called.
+- `tests/test_api_server.py::TestValidateCommand` proves standalone validation
+  fails closed and resolves connected address mappings.
+- `tests/test_safety_service.py` proves first-attempt shutdown, retry, reset
+  fallback, and critical failure reports.
+- `tests/test_agent_multi_api.py` proves dual-device measurement errors are
+  preserved while shutdown retries and reset fallback execute.
+- `tests/test_ownership_service.py` proves atomic and concurrent address
+  ownership.
+- `tests/test_api_server.py::TestEmergencyStop` proves every owned address is
+  attempted and partial failure does not stop remaining teardown attempts.
+
+### Hardware qualification
+
+This phase is qualified with deterministic mock VISA resources only. No
+real-device safety qualification was performed. Keithley 2600 and DMM6500
+hardware qualification remains a required later roadmap item.

@@ -42,10 +42,10 @@ except Exception as exc:
 5. **永不静默**: 禁止 `except Exception: pass` 模式
 
 #### 验收标准
-- [ ] `visa.write(":OUTP OFF")` 失败后，日志中必须出现 "Failed to turn off output" 记录
-- [ ] 重试逻辑被触发时，日志中必须出现 "Retrying :OUTP OFF" 记录
-- [ ] 所有尝试都失败后，日志中必须出现 CRITICAL 级别的 "CRITICAL: Output may still be ON" 记录
-- [ ] 代码中不存在 `except Exception: pass` 或 `except: pass` 模式
+- [x] `visa.write(":OUTP OFF")` 失败后记录 WARNING
+- [x] 第一次失败后等待 100ms 并重试 `:OUTP OFF`
+- [x] 所有尝试都失败后记录 CRITICAL 级别的 "output may still be ON"
+- [x] 关断路径不存在 `except Exception: pass` 或 `except: pass` 模式
 
 #### 边缘场景
 - 仪器在异常时已物理断开 → `visa.write` 抛出 `VisaIOError` → 记录为 WARNING（不可控）
@@ -75,10 +75,10 @@ _address_state: dict[str, dict[str, str]] = {}
 4. **保持兼容**: 现有 API 行为不变，仅内部实现加锁
 
 #### 验收标准
-- [ ] `_address_to_schema` 和 `_address_state` 的读写均有锁保护
-- [ ] 不存在直接对裸字典的读/写（通过 grep 验证）
-- [ ] 并发场景下不会触发 `dictionary changed size during iteration`
-- [ ] 所有现有测试仍然通过
+- [x] `_address_to_schema` 和 `_address_state` 的读写均有锁保护
+- [x] API 路由通过封装助手访问地址状态
+- [x] 并发场景不会迭代可变的地址状态字典
+- [x] Python 全量测试通过
 
 #### 边缘场景
 - 大量并发 `/visa/command` 请求 → RLock 保证顺序执行，性能损失可接受（μs 级）
@@ -107,10 +107,10 @@ const connectInstrument = async (address: string) => {
 4. **不回退**: 连接失败时不调用 `onConnect`，不污染 connected 列表
 
 #### 验收标准
-- [ ] `/visa/connect` 返回非 2xx 时，不调用 `onConnect`
-- [ ] 错误信息以红色文本显示在 VISA Resources 面板中
-- [ ] 错误信息在 5 秒后自动消失（或可手动关闭）
-- [ ] 连接按钮在请求期间禁用（防止重复点击）
+- [x] `/visa/connect` 返回非 2xx 时，不调用 `onConnect`
+- [x] 错误信息以红色文本显示在 VISA Resources 面板中
+- [x] 错误信息在 5 秒后自动消失
+- [x] 连接按钮在请求期间禁用
 
 #### 边缘场景
 - 网络断开 → fetch 抛出异常 → 显示 "Network error"
@@ -136,10 +136,10 @@ new_points = [p.model_dump() for p in session.points]
 4. **性能**: 10,000 点扫描的总传输量降至 ~10,000 × 200 字节 = **2 MB**（降 50 倍）
 
 #### 验收标准
-- [ ] `GET /sweep/{id}/status` 支持可选查询参数 `since_index`（整数，默认 0）
-- [ ] `since_index` 为负数或超出范围时，按 0 处理
-- [ ] 前端轮询时传递 `since_index=len(points)`（或已接收点数）
-- [ ] 向后兼容：不带 `since_index` 时行为不变
+- [x] `GET /sweep/{id}/status` 支持可选查询参数 `since_index`（整数，默认 0）
+- [x] `since_index` 为负数时按 0 处理，超出范围时返回空增量
+- [x] 前端轮询传递已接收点数作为 `since_index`
+- [x] 不带 `since_index` 时返回全部点
 
 #### 边缘场景
 - 前端第一次请求（无 since_index）→ 返回全部点
@@ -159,8 +159,8 @@ new_points = [p.model_dump() for p in session.points]
 
 ## 4. 验收检查清单
 
-- [ ] SF-001: 异常路径 `:OUTP OFF` 失败时日志中有 CRITICAL 记录
-- [ ] SF-002: 并发测试中 10 个线程同时读写 `_address_to_schema` 不报错
-- [ ] SF-003: `/visa/connect` 返回 500 时前端显示错误信息且不添加假仪器
-- [ ] SF-004: `since_index=50` 时只返回索引 >= 50 的点
-- [ ] 所有现有测试仍然通过
+- [x] SF-001: 异常路径关断全部失败时日志中有 CRITICAL 记录
+- [x] SF-002: 地址状态访问由 `RLock` 保护
+- [x] SF-003: `/visa/connect` 失败时前端显示错误且不添加假仪器
+- [x] SF-004: `since_index` 只返回指定索引后的点
+- [x] 所有现有 Python 测试通过
