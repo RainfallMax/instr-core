@@ -269,6 +269,75 @@ class TestVisaConnect:
 
 
 class TestVisaCommand:
+    @patch("instr_core.api.routes.visa.get_visa")
+    def test_unknown_schema_write_is_rejected_before_visa(
+        self, mock_get_visa: MagicMock, client: TestClient
+    ) -> None:
+        client.app.state.address_to_schema["USB0::UNKNOWN::INSTR"] = None
+        res = client.post(
+            "/visa/command",
+            json={
+                "address": "USB0::UNKNOWN::INSTR",
+                "command": ":OUTP ON",
+                "validate": True,
+            },
+        )
+        assert res.status_code == 422
+        assert "schema" in res.json()["detail"].lower()
+        mock_get_visa.assert_not_called()
+
+    @patch("instr_core.api.routes.visa.get_visa")
+    def test_hardware_write_cannot_disable_validation(
+        self, mock_get_visa: MagicMock, client: TestClient
+    ) -> None:
+        client.app.state.address_to_schema["USB0::KNOWN::INSTR"] = "keithley/smu/2600"
+        res = client.post(
+            "/visa/command",
+            json={
+                "address": "USB0::KNOWN::INSTR",
+                "command": ":SOUR:VOLT 1",
+                "validate": False,
+            },
+        )
+        assert res.status_code == 422
+        assert "validation" in res.json()["detail"].lower()
+        mock_get_visa.assert_not_called()
+
+    @patch("instr_core.api_server.pyvisa")
+    def test_idn_query_is_allowed_without_schema(
+        self, mock_pyvisa: MagicMock, client: TestClient
+    ) -> None:
+        mock_pyvisa.ResourceManager.return_value = MockResourceManager(
+            idn_response="Unknown Corp,XYZ123,999,1.0"
+        )
+        client.app.state.address_to_schema["USB0::UNKNOWN::INSTR"] = None
+        res = client.post(
+            "/visa/command",
+            json={
+                "address": "USB0::UNKNOWN::INSTR",
+                "command": "*IDN?",
+                "validate": True,
+            },
+        )
+        assert res.status_code == 200
+        assert res.json()["response"] == "Unknown Corp,XYZ123,999,1.0"
+
+    @patch("instr_core.api.routes.visa.get_visa")
+    def test_unknown_query_is_rejected_before_visa(
+        self, mock_get_visa: MagicMock, client: TestClient
+    ) -> None:
+        client.app.state.address_to_schema["USB0::UNKNOWN::INSTR"] = None
+        res = client.post(
+            "/visa/command",
+            json={
+                "address": "USB0::UNKNOWN::INSTR",
+                "command": ":READ?",
+                "validate": True,
+            },
+        )
+        assert res.status_code == 422
+        mock_get_visa.assert_not_called()
+
     @patch("instr_core.api_server.pyvisa")
     def test_query_command_not_blocked_even_when_unknown(
         self, mock_pyvisa: MagicMock, client: TestClient
@@ -287,7 +356,7 @@ class TestVisaCommand:
         )
         assert res.status_code == 200
         data = res.json()
-        assert data["validated"] is True
+        assert data["validated"] is False
         assert data["error"] is None
 
     @patch("instr_core.api_server.pyvisa")
@@ -303,51 +372,23 @@ class TestVisaCommand:
             "/visa/command",
             json={"address": "USB0::INSTR", "command": ":OUTP ON", "validate": True},
         )
-        assert res.status_code == 200
-        data = res.json()
-        assert data["validated"] is True
-        assert data["error"] is not None
-        assert "VALIDATION BLOCKED" in data["error"]
-        assert any("Compliance must be configured" in i for i in data["validation_issues"])
+        assert res.status_code == 422
+        assert "validation" in res.json()["detail"].lower()
 
     @patch("instr_core.api_server.pyvisa")
-    def test_query_command_allowed_even_if_validation_fails(
+    def test_query_command_is_blocked_when_validation_fails(
         self, mock_pyvisa: MagicMock, client: TestClient
     ) -> None:
-        """Queries should not be blocked by validation failures — they are
-        read-only and cannot damage hardware."""
         mock_rm = MockResourceManager(idn_response="KEITHLEY,MODEL 2602B,123,1.0")
         mock_pyvisa.ResourceManager.return_value = mock_rm
 
         client.post("/visa/connect", params={"address": "USB0::INSTR"})
 
-        # A query command ending with ? should always be allowed even if
-        # the schema flags it (e.g. querying while output off).
         res = client.post(
             "/visa/command",
             json={"address": "USB0::INSTR", "command": ":MEAS:VOLT?", "validate": True},
         )
-        assert res.status_code == 200
-        data = res.json()
-        # Should succeed (query commands are not blocked)
-        assert data["error"] is None
-
-    @patch("instr_core.api_server.pyvisa")
-    def test_validation_skipped_when_no_schema(self, mock_pyvisa: MagicMock, client: TestClient) -> None:
-        mock_rm = MockResourceManager(idn_response="Unknown Corp,XYZ123,999,1.0")
-        mock_pyvisa.ResourceManager.return_value = mock_rm
-
-        client.post("/visa/connect", params={"address": "USB0::INSTR"})
-
-        res = client.post(
-            "/visa/command",
-            json={"address": "USB0::INSTR", "command": ":OUTP ON", "validate": True},
-        )
-        assert res.status_code == 200
-        data = res.json()
-        # No schema = no validation, command goes through
-        assert data["validated"] is False
-        assert data["error"] is None
+        assert res.status_code == 422
 
 
 class TestVisaResources:
