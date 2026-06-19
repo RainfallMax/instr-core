@@ -99,6 +99,50 @@ class MultiMockResourceManager:
         return self.resources[address]
 
 
+class ShutdownRetrySource(MultiMockResource):
+    """Source that needs reset fallback after output has been enabled."""
+
+    def __init__(self) -> None:
+        super().__init__("KEITHLEY INSTRUMENTS INC.,MODEL 2602B,1,1.0")
+        self.output_was_enabled = False
+        self.shutdown_failures = 2
+
+    def write(self, cmd: str) -> None:
+        self.written.append(cmd)
+        if cmd == ":OUTP ON":
+            self.output_was_enabled = True
+        if (
+            cmd == ":OUTP OFF"
+            and self.output_was_enabled
+            and self.shutdown_failures > 0
+        ):
+            self.shutdown_failures -= 1
+            raise RuntimeError("shutdown failed")
+
+
+class MeasurementFailureMeter(MultiMockResource):
+    """Meter that fails during the first measurement."""
+
+    def query(self, cmd: str) -> str:
+        self.query_log.append(cmd)
+        if cmd == ":READ?":
+            raise RuntimeError("measurement failed")
+        return super().query(cmd)
+
+
+class FailingMultiResourceManager(MultiMockResourceManager):
+    """Dual-resource manager for teardown failure injection."""
+
+    def __init__(self) -> None:
+        self.resources = {
+            "USB0::SMU::INSTR": ShutdownRetrySource(),
+            "USB0::DMM::INSTR": MeasurementFailureMeter(
+                "KEITHLEY INSTRUMENTS,DMM6500,2,1.0"
+            ),
+        }
+        self.opened = []
+
+
 def make_registry(tmp_path: Path) -> Registry:
     registry_root = tmp_path / "registry"
     dmm_dir = registry_root / "keithley" / "dmm"
@@ -240,6 +284,31 @@ def test_multi_agent_execute_records_points_and_turns_output_off(
     assert run["result"]["summary"]["points"] == 3
     assert rm.resources["USB0::SMU::INSTR"].written[-1] == ":OUTP OFF"
     assert rm.resources["USB0::DMM::INSTR"].query_log.count(":READ?") == 3
+
+
+@patch("instr_core.api_server.pyvisa")
+def test_multi_agent_failure_preserves_error_and_retries_shutdown(
+    mock_pyvisa: MagicMock,
+    tmp_path: Path,
+) -> None:
+    rm = FailingMultiResourceManager()
+    mock_pyvisa.ResourceManager.return_value = rm
+    client = make_client(tmp_path)
+    plan_response = client.post("/agent/multi/plan", json=plan_payload())
+    run_id = plan_response.json()["run"]["run_id"]
+    client.post("/agent/multi/dry-run", json={"run_id": run_id})
+
+    execute_response = client.post(
+        "/agent/multi/execute",
+        json={"run_id": run_id, "confirm": True},
+    )
+
+    assert execute_response.status_code == 500
+    stored = client.get(f"/agent/multi/runs/{run_id}").json()["run"]
+    assert stored["status"] == "failed"
+    assert "measurement failed" in stored["error_message"]
+    source = rm.resources["USB0::SMU::INSTR"]
+    assert source.written[-3:] == [":OUTP OFF", ":OUTP OFF", "*RST"]
 
 
 @patch("instr_core.api_server.pyvisa")

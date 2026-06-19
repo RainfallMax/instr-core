@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from ..api.services.safety_service import TeardownReport, safe_turn_off_output
+from ..safety import TeardownReport, safe_turn_off_output
 from .models import SweepConfig, SweepPoint, SweepSession, SweepStatus
 
 logger = logging.getLogger(__name__)

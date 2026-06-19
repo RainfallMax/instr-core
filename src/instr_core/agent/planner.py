@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ..api.services.sweep_service import validate_sweep_config
+from ..safety import safe_turn_off_output
 from ..schema import CommandDef
 from ..schema import InstrumentSchema
 from ..sweep import SweepConfig
@@ -243,6 +244,7 @@ def execute_dual_keithley_run(run: DualKeithleyRun, visa_manager: Any) -> DualKe
     source = visa_manager.open_resource(run.plan.source.address)
     meter = visa_manager.open_resource(run.plan.meter.address)
     points: list[DualSweepPoint] = []
+    execution_error: Exception | None = None
 
     try:
         meter.write(":CONF:VOLT:DC")
@@ -271,8 +273,21 @@ def execute_dual_keithley_run(run: DualKeithleyRun, visa_manager: Any) -> DualKe
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
             )
+    except Exception as exc:
+        execution_error = exc
     finally:
-        source.write(":OUTP OFF")
+        teardown = safe_turn_off_output(
+            source,
+            run.run_id,
+            run.plan.source.address,
+        )
+
+    if execution_error is not None:
+        raise execution_error
+    if not teardown.safe:
+        raise RuntimeError(
+            "Sweep completed but source output could not be confirmed off"
+        )
 
     values = [point.meter_value for point in points]
     summary = DualSweepSummary(

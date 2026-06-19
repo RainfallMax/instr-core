@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from instr_core.api.services.safety_service import safe_turn_off_output
+from instr_core.safety import safe_turn_off_output
 
 
 class ScriptedVisa:
