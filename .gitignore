@@ -21,6 +21,9 @@ build/
 # Claude Code local overrides
 .claude/settings.local.json
 
+# Isolated feature worktrees
+.worktrees/
+
 # IDE / editors
 .idea/
 .vscode/
