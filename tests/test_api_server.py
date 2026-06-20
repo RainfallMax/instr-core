@@ -29,6 +29,7 @@ class MockResource:
     def __init__(self, idn_response: str = "KEITHLEY,MODEL 2602B,123,1.0") -> None:
         self._idn = idn_response
         self._written: list[str] = []
+        self.closed = 0
 
     def query(self, cmd: str) -> str:
         if cmd == "*IDN?":
@@ -38,18 +39,26 @@ class MockResource:
     def write(self, cmd: str) -> None:
         self._written.append(cmd)
 
+    def close(self) -> None:
+        self.closed += 1
+
 
 class MockResourceManager:
     """Mock PyVISA ResourceManager for testing."""
 
     def __init__(self, idn_response: str = "KEITHLEY,MODEL 2602B,123,1.0") -> None:
         self._idn = idn_response
+        self.resources: list[MockResource] = []
+        self.opened: list[str] = []
 
     def list_resources(self) -> tuple[str, ...]:
         return ("USB0::0x05E6::0x2600::INSTR",)
 
     def open_resource(self, address: str) -> MockResource:
-        return MockResource(self._idn)
+        self.opened.append(address)
+        resource = MockResource(self._idn)
+        self.resources.append(resource)
+        return resource
 
 
 class EmergencyResource(MockResource):
@@ -293,6 +302,76 @@ class TestVisaConnect:
         res = client.post("/visa/connect", params={"address": "USB0::INSTR"})
         assert res.status_code == 500
 
+    @patch("instr_core.api_server.pyvisa")
+    def test_duplicate_connect_reuses_managed_session(
+        self, mock_pyvisa: MagicMock, client: TestClient
+    ) -> None:
+        rm = MockResourceManager()
+        mock_pyvisa.ResourceManager.return_value = rm
+
+        first = client.post("/visa/connect", params={"address": "USB0::INSTR"})
+        second = client.post("/visa/connect", params={"address": "USB0::INSTR"})
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert rm.opened == ["USB0::INSTR"]
+        connected = client.get("/visa/connected")
+        assert connected.status_code == 200
+        assert [item["address"] for item in connected.json()] == ["USB0::INSTR"]
+
+    @patch("instr_core.api_server.pyvisa")
+    def test_disconnect_closes_and_clears_address_tracking(
+        self, mock_pyvisa: MagicMock, client: TestClient
+    ) -> None:
+        rm = MockResourceManager()
+        mock_pyvisa.ResourceManager.return_value = rm
+        client.post("/visa/connect", params={"address": "USB0::INSTR"})
+
+        response = client.post(
+            "/visa/disconnect",
+            params={"address": "USB0::INSTR"},
+        )
+
+        assert response.status_code == 200
+        assert rm.resources[0].closed == 1
+        assert client.get("/visa/connected").json() == []
+        assert "USB0::INSTR" not in client.app.state.address_to_schema
+        assert "USB0::INSTR" not in client.app.state.address_state
+
+    @patch("instr_core.api_server.pyvisa")
+    def test_disconnect_rejects_active_owner(
+        self, mock_pyvisa: MagicMock, client: TestClient
+    ) -> None:
+        mock_pyvisa.ResourceManager.return_value = MockResourceManager()
+        client.post("/visa/connect", params={"address": "USB0::INSTR"})
+        ownership = AddressOwnershipRegistry()
+        ownership.acquire("USB0::INSTR", "run-1")
+        client.app.state.address_ownership = ownership
+
+        response = client.post(
+            "/visa/disconnect",
+            params={"address": "USB0::INSTR"},
+        )
+
+        assert response.status_code == 409
+
+    @patch("instr_core.api_server.pyvisa")
+    def test_reconnect_replaces_resource(
+        self, mock_pyvisa: MagicMock, client: TestClient
+    ) -> None:
+        rm = MockResourceManager()
+        mock_pyvisa.ResourceManager.return_value = rm
+        client.post("/visa/connect", params={"address": "USB0::INSTR"})
+
+        response = client.post(
+            "/visa/reconnect",
+            params={"address": "USB0::INSTR"},
+        )
+
+        assert response.status_code == 200
+        assert rm.opened == ["USB0::INSTR", "USB0::INSTR"]
+        assert rm.resources[0].closed == 1
+
 
 class TestVisaCommand:
     @patch("instr_core.api.routes.visa.get_visa")
@@ -336,7 +415,11 @@ class TestVisaCommand:
         mock_pyvisa.ResourceManager.return_value = MockResourceManager(
             idn_response="Unknown Corp,XYZ123,999,1.0"
         )
-        client.app.state.address_to_schema["USB0::UNKNOWN::INSTR"] = None
+        connect = client.post(
+            "/visa/connect",
+            params={"address": "USB0::UNKNOWN::INSTR"},
+        )
+        assert connect.status_code == 200
         res = client.post(
             "/visa/command",
             json={
@@ -384,6 +467,29 @@ class TestVisaCommand:
         data = res.json()
         assert data["validated"] is False
         assert data["error"] is None
+        assert mock_rm.opened == ["USB0::INSTR"]
+
+    @patch("instr_core.api.routes.visa.get_visa")
+    def test_disconnected_command_does_not_open_resource(
+        self, mock_get_visa: MagicMock, client: TestClient
+    ) -> None:
+        client.app.state.address_to_schema["USB0::KNOWN::INSTR"] = "keithley/smu/2600"
+        client.app.state.address_state["USB0::KNOWN::INSTR"] = {
+            "source_mode": "VOLT",
+            ":SENS:CURR:PROT": "0.01",
+        }
+
+        response = client.post(
+            "/visa/command",
+            json={
+                "address": "USB0::KNOWN::INSTR",
+                "command": ":SOUR:VOLT 1",
+                "validate": True,
+            },
+        )
+
+        assert response.status_code == 409
+        mock_get_visa.assert_not_called()
 
     @patch("instr_core.api_server.pyvisa")
     def test_blocked_write_command_returns_error(self, mock_pyvisa: MagicMock, client: TestClient) -> None:
@@ -470,6 +576,11 @@ class TestEmergencyStop:
         }
         rm = EmergencyResourceManager(resources)
         mock_pyvisa.ResourceManager.return_value = rm
+        for address in resources:
+            assert client.post(
+                "/visa/connect",
+                params={"address": address},
+            ).status_code == 200
         ownership = AddressOwnershipRegistry()
         ownership.acquire("USB0::1", "run-1")
         ownership.acquire("USB0::2", "run-2")
@@ -496,6 +607,11 @@ class TestEmergencyStop:
             "USB0::SAFE": EmergencyResource(),
         }
         mock_pyvisa.ResourceManager.return_value = EmergencyResourceManager(resources)
+        for address in resources:
+            assert client.post(
+                "/visa/connect",
+                params={"address": address},
+            ).status_code == 200
         ownership = AddressOwnershipRegistry()
         ownership.acquire("USB0::FAIL", "run-fail")
         ownership.acquire("USB0::SAFE", "run-safe")

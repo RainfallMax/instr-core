@@ -12,8 +12,16 @@ from ..agent.store import AgentRunStore
 from ..sweep import SweepEngine
 from ..validator import Registry
 from .services.ownership_service import AddressOwnershipRegistry
+from .services.session_manager import VisaSessionManager
 
 logger = logging.getLogger("instr_core.api")
+
+
+def _get_visa_resource_manager():
+    """Resolve the lazy VISA manager without creating an import cycle."""
+    from .services.visa_service import get_visa
+
+    return get_visa()
 
 
 def init_app_state(app) -> None:
@@ -36,6 +44,7 @@ def init_app_state(app) -> None:
     app.state.address_to_schema = {}
     app.state.address_state = {}
     app.state.address_ownership = AddressOwnershipRegistry()
+    app.state.visa_sessions = VisaSessionManager(_get_visa_resource_manager)
 
 
 def get_registry(request: Request) -> Registry:
@@ -68,6 +77,15 @@ def get_address_ownership(request: Request) -> AddressOwnershipRegistry:
         ownership = AddressOwnershipRegistry()
         request.app.state.address_ownership = ownership
     return ownership
+
+
+def get_visa_sessions(request: Request) -> VisaSessionManager:
+    """Get the application-wide managed VISA session registry."""
+    sessions = getattr(request.app.state, "visa_sessions", None)
+    if sessions is None:
+        sessions = VisaSessionManager(_get_visa_resource_manager)
+        request.app.state.visa_sessions = sessions
+    return sessions
 
 
 def _load_registry_paths() -> list[str]:
@@ -124,3 +142,10 @@ def _update_address_state_entry(request: Request, address: str, key: str, value:
         if address not in request.app.state.address_state:
             request.app.state.address_state[address] = {}
         request.app.state.address_state[address][key] = value
+
+
+def _clear_address_tracking(request: Request, address: str) -> None:
+    """Remove schema and virtual-state tracking for one disconnected address."""
+    with request.app.state.address_lock:
+        request.app.state.address_to_schema.pop(address, None)
+        request.app.state.address_state.pop(address, None)
