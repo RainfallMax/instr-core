@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from contextlib import ExitStack
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from ...agent import (
@@ -17,7 +18,6 @@ from ...agent import (
     AgentParseError,
     AgentPlanRequest,
     AgentPlanResponse,
-    AgentRunStatus,
     DualKeithleyDryRunRequest,
     DualKeithleyExecuteRequest,
     DualKeithleyPlanRequest,
@@ -34,9 +34,13 @@ from ...agent.planner import (
     ensure_executable,
     execute_dual_keithley_run,
 )
-from ...agent.store import AgentRunStore
+from ...agent.store import (
+    AgentRunStore,
+    ExecutionReservation,
+    IdempotencyConflict,
+)
 from ...sweep import SweepSession, SweepStatus
-from ...run_lifecycle import RunStatus, transition_run
+from ...run_lifecycle import RunStatus
 from ..dependencies import (
     _get_all_address_states,
     _get_address_schema,
@@ -50,6 +54,72 @@ from ..dependencies import (
 from ..services.session_manager import SessionNotFound, SessionUnhealthy
 
 router = APIRouter(prefix="/agent", tags=["agent"])
+IDEMPOTENCY_KEY_PATTERN = re.compile(r"^[A-Za-z0-9._:/-]{8,128}$")
+
+
+def _idempotency_key_or_error(
+    run_id: str,
+    key: str | None,
+) -> str:
+    if key is None:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "IDEMPOTENCY_KEY_REQUIRED",
+                "message": "Idempotency-Key header is required",
+                "run_id": run_id,
+            },
+        )
+    if not IDEMPOTENCY_KEY_PATTERN.fullmatch(key):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "IDEMPOTENCY_KEY_INVALID",
+                "message": "Idempotency-Key must be 8-128 safe ASCII characters",
+                "run_id": run_id,
+            },
+        )
+    return key
+
+
+def _current_fingerprint(run, request, registry, visa_sessions) -> str:
+    context = build_validation_context(
+        run,
+        registry,
+        visa_sessions,
+        _get_all_address_states(request),
+    )
+    return validation_context_fingerprint(context)
+
+
+def _reserve_or_error(
+    store: AgentRunStore,
+    run,
+    key: str,
+    fingerprint: str,
+):
+    if run.validation_context_fingerprint != fingerprint:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "VALIDATION_CONTEXT_STALE",
+                "message": "Validation context changed; run dry-run again before execution",
+                "run_id": run.run_id,
+                "current_status": run.status,
+            },
+        )
+    try:
+        return store.reserve_execution(run.run_id, key, fingerprint)
+    except IdempotencyConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "IDEMPOTENCY_KEY_CONFLICT",
+                "message": str(exc),
+                "run_id": run.run_id,
+                "current_status": run.status,
+            },
+        ) from exc
 
 
 @router.post("/plan", response_model=AgentPlanResponse)
@@ -113,6 +183,8 @@ def dry_run(
 @router.post("/execute", response_model=AgentExecuteResponse)
 def execute(
     req: AgentExecuteRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     store: AgentRunStore = Depends(get_agent_store),
     registry=Depends(get_registry),
     sweep_engine=Depends(get_sweep_engine),
@@ -128,6 +200,13 @@ def execute(
         ensure_executable(run, req.confirm)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    key = _idempotency_key_or_error(run.run_id, idempotency_key)
+    fingerprint = _current_fingerprint(run, request, registry, visa_sessions)
+    reservation = _reserve_or_error(store, run, key, fingerprint)
+    if reservation.reservation == ExecutionReservation.REPLAY:
+        return AgentExecuteResponse(run=reservation.run)
+    run = reservation.run
 
     if not ownership.acquire(run.plan.address, run.run_id):
         raise HTTPException(
@@ -161,12 +240,11 @@ def execute(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         ownership.release(run.plan.address, run.run_id)
-        run.status = AgentRunStatus.FAILED
-        run.error_message = str(exc)
-        store.update(run)
+        failed = store.transition(run.run_id, RunStatus.ERROR, reason=str(exc))
+        failed.error_message = str(exc)
+        store.update(failed)
         raise HTTPException(status_code=500, detail=f"Execution failed: {exc}") from exc
 
-    run.status = AgentRunStatus.RUNNING
     run.sweep_session_id = session.session_id
     store.update(run)
     return AgentExecuteResponse(run=run)
@@ -311,6 +389,9 @@ def dry_run_multi(
 @router.post("/multi/execute", response_model=DualKeithleyPlanResponse)
 def execute_multi(
     req: DualKeithleyExecuteRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    registry=Depends(get_registry),
     store: AgentRunStore = Depends(get_agent_store),
     ownership=Depends(get_address_ownership),
     visa_sessions=Depends(get_visa_sessions),
@@ -326,6 +407,13 @@ def execute_multi(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    key = _idempotency_key_or_error(run.run_id, idempotency_key)
+    fingerprint = _current_fingerprint(run, request, registry, visa_sessions)
+    reservation = _reserve_or_error(store, run, key, fingerprint)
+    if reservation.reservation == ExecutionReservation.REPLAY:
+        return DualKeithleyPlanResponse(run=reservation.run)
+    run = reservation.run
+
     addresses = [run.plan.source.address, run.plan.meter.address]
     if not ownership.acquire_many(addresses, run.run_id):
         raise HTTPException(
@@ -335,7 +423,6 @@ def execute_multi(
 
     try:
         try:
-            transition_run(run, RunStatus.RUNNING)
             for address in addresses:
                 visa_sessions.get(address)
             with ExitStack() as stack:
@@ -351,10 +438,9 @@ def execute_multi(
         except (SessionNotFound, SessionUnhealthy) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except Exception as exc:
-            if run.status == RunStatus.RUNNING:
-                transition_run(run, RunStatus.ERROR, reason=str(exc))
-            run.error_message = str(exc)
-            store.update(run)
+            failed = store.transition(run.run_id, RunStatus.ERROR, reason=str(exc))
+            failed.error_message = str(exc)
+            store.update(failed)
             raise HTTPException(
                 status_code=500,
                 detail=f"Execution failed: {exc}",

@@ -11,7 +11,7 @@ from typing import Any, Callable
 
 from ..safety import TeardownReport, safe_turn_off_output
 from ..run_lifecycle import RunStatus, transition_run
-from .models import SweepConfig, SweepPoint, SweepSession, SweepStatus
+from .models import SweepConfig, SweepPoint, SweepSession
 
 logger = logging.getLogger(__name__)
 

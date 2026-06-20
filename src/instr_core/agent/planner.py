@@ -16,7 +16,6 @@ from ..validator import Registry, validate_command
 from .models import (
     AgentPlan,
     AgentRun,
-    AgentRunStatus,
     AgentValidationResult,
     DualKeithleyPlan,
     DualKeithleyRun,

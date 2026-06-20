@@ -7,12 +7,33 @@ import os
 import threading
 import builtins
 from datetime import datetime, timezone
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 from typing import Any
 
 from .models import AgentRun, DualKeithleyRun, ExperimentType
 from ..run_lifecycle import RunStatus, transition_run
+
+
+class ExecutionReservation(str, Enum):
+    """Outcome of an atomic execution reservation."""
+
+    NEW = "new"
+    REPLAY = "replay"
+
+
+@dataclass(frozen=True)
+class ReservationResult:
+    """Reservation outcome and current persisted run."""
+
+    reservation: ExecutionReservation
+    run: Any
+
+
+class IdempotencyConflict(RuntimeError):
+    """An execution reservation conflicts with a previous request."""
 
 
 class AgentRunStore:
@@ -80,6 +101,52 @@ class AgentRunStore:
             transition_run(run, target, reason=reason)
             self._persist(run)
             return run.model_copy(deep=True)
+
+    def reserve_execution(
+        self,
+        run_id: str,
+        key: str,
+        context_fingerprint: str,
+    ) -> ReservationResult:
+        """Atomically reserve at-most-once execution for a validated run."""
+        with self._lock:
+            run = self._runs.get(run_id)
+            if run is None:
+                raise KeyError(f"Run '{run_id}' not found")
+
+            if run.execution_idempotency_key is not None:
+                if (
+                    run.execution_idempotency_key == key
+                    and run.execution_context_fingerprint == context_fingerprint
+                ):
+                    return ReservationResult(
+                        ExecutionReservation.REPLAY,
+                        run.model_copy(deep=True),
+                    )
+                raise IdempotencyConflict(
+                    f"Run '{run_id}' already has a different execution reservation"
+                )
+
+            if run.status != RunStatus.DRY_RUN:
+                raise IdempotencyConflict(
+                    f"Run '{run_id}' cannot execute from status {run.status.value}"
+                )
+            if run.validation_context_fingerprint != context_fingerprint:
+                raise IdempotencyConflict(
+                    "Validation context changed; run dry-run again before execution"
+                )
+            if run.validation is not None and not run.validation.valid:
+                raise IdempotencyConflict("Cannot execute an invalid dry-run")
+
+            run.execution_idempotency_key = key
+            run.execution_context_fingerprint = context_fingerprint
+            run.execution_attempts = 1
+            transition_run(run, RunStatus.RUNNING, reason="execution reserved")
+            self._persist(run)
+            return ReservationResult(
+                ExecutionReservation.NEW,
+                run.model_copy(deep=True),
+            )
 
     def recover_interrupted_runs(self) -> builtins.list[str]:
         """Convert persisted active runs to ERROR after process restart."""

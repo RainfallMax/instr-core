@@ -7,7 +7,11 @@ import pytest
 
 from instr_core.agent.models import AgentRunStatus, InstrumentBinding, MeterConfig
 from instr_core.agent.planner import create_dual_keithley_run, create_iv_sweep_run
-from instr_core.agent.store import AgentRunStore
+from instr_core.agent.store import (
+    AgentRunStore,
+    ExecutionReservation,
+    IdempotencyConflict,
+)
 from instr_core.sweep import SweepConfig
 
 
@@ -181,3 +185,67 @@ def test_restart_recovers_active_run_to_error(tmp_path) -> None:
 
     assert restored.status == AgentRunStatus.ERROR
     assert "Backend restarted" in restored.error_message
+
+
+def _dry_run_ready(store: AgentRunStore):
+    run = create_iv_sweep_run(
+        "Sweep 0V to 1V in 0.5V steps with 10mA compliance",
+        "keithley/smu/2600",
+        "USB0::INSTR",
+    )
+    run.validation_context_fingerprint = "fingerprint"
+    store.create(run)
+    store.transition(run.run_id, AgentRunStatus.DRY_RUN)
+    return run
+
+
+def test_reserve_execution_new_and_same_key_replay() -> None:
+    store = AgentRunStore()
+    run = _dry_run_ready(store)
+
+    first = store.reserve_execution(run.run_id, "request-key", "fingerprint")
+    replay = store.reserve_execution(run.run_id, "request-key", "fingerprint")
+
+    assert first.reservation == ExecutionReservation.NEW
+    assert replay.reservation == ExecutionReservation.REPLAY
+    assert replay.run.status == AgentRunStatus.RUNNING
+    assert replay.run.execution_attempts == 1
+
+
+def test_reserve_execution_rejects_different_key_or_fingerprint() -> None:
+    store = AgentRunStore()
+    run = _dry_run_ready(store)
+    store.reserve_execution(run.run_id, "request-key", "fingerprint")
+
+    with pytest.raises(IdempotencyConflict):
+        store.reserve_execution(run.run_id, "different-key", "fingerprint")
+    with pytest.raises(IdempotencyConflict):
+        store.reserve_execution(run.run_id, "request-key", "changed")
+
+
+def test_concurrent_reservations_have_one_new_winner() -> None:
+    store = AgentRunStore()
+    run = _dry_run_ready(store)
+    barrier = threading.Barrier(10)
+    outcomes: list[ExecutionReservation | str] = []
+
+    def reserve(index: int) -> None:
+        barrier.wait()
+        try:
+            result = store.reserve_execution(
+                run.run_id,
+                f"request-{index}",
+                "fingerprint",
+            )
+            outcomes.append(result.reservation)
+        except IdempotencyConflict:
+            outcomes.append("conflict")
+
+    threads = [threading.Thread(target=reserve, args=(index,)) for index in range(10)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert outcomes.count(ExecutionReservation.NEW) == 1
+    assert outcomes.count("conflict") == 9

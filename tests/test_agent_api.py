@@ -127,6 +127,7 @@ def test_agent_execute_requires_confirmation(mock_pyvisa: MagicMock) -> None:
     execute_response = client.post(
         "/agent/execute",
         json={"run_id": run_id, "confirm": False},
+        headers={"Idempotency-Key": "single-confirm-test"},
     )
 
     assert execute_response.status_code == 400
@@ -150,6 +151,7 @@ def test_agent_execute_starts_sweep_after_valid_dry_run(mock_pyvisa: MagicMock) 
     execute_response = client.post(
         "/agent/execute",
         json={"run_id": run_id, "confirm": True},
+        headers={"Idempotency-Key": "single-execute-test"},
     )
 
     assert execute_response.status_code == 200
@@ -160,3 +162,81 @@ def test_agent_execute_starts_sweep_after_valid_dry_run(mock_pyvisa: MagicMock) 
     assert session is not None
     session._engine_thread.join(timeout=2)
     assert client.app.state.address_ownership.snapshot() == {}
+
+
+@patch("instr_core.api_server.pyvisa")
+def test_agent_execute_requires_idempotency_key(mock_pyvisa: MagicMock) -> None:
+    client = make_client()
+    connect_keithley(client, mock_pyvisa)
+    run_id = client.post(
+        "/agent/plan",
+        json={
+            "goal": "Sweep 0V to 1V in 0.5V steps with 10mA compliance",
+            "address": "USB0::INSTR",
+        },
+    ).json()["run"]["run_id"]
+    client.post("/agent/dry-run", json={"run_id": run_id})
+
+    response = client.post(
+        "/agent/execute",
+        json={"run_id": run_id, "confirm": True},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "IDEMPOTENCY_KEY_REQUIRED"
+
+
+@patch("instr_core.api_server.pyvisa")
+def test_agent_same_key_replay_does_not_execute_twice(mock_pyvisa: MagicMock) -> None:
+    client = make_client()
+    connect_keithley(client, mock_pyvisa)
+    rm = mock_pyvisa.ResourceManager.return_value
+    run_id = client.post(
+        "/agent/plan",
+        json={
+            "goal": "Sweep 0V to 1V in 0.5V steps with 10mA compliance",
+            "address": "USB0::INSTR",
+        },
+    ).json()["run"]["run_id"]
+    client.post("/agent/dry-run", json={"run_id": run_id})
+    headers = {"Idempotency-Key": "same-key-replay"}
+
+    first = client.post(
+        "/agent/execute",
+        json={"run_id": run_id, "confirm": True},
+        headers=headers,
+    )
+    session = client.app.state.sweep_engine.get_session(first.json()["run"]["sweep_session_id"])
+    session._engine_thread.join(timeout=2)
+    second = client.post(
+        "/agent/execute",
+        json={"run_id": run_id, "confirm": True},
+        headers=headers,
+    )
+
+    assert second.status_code == 200
+    assert rm.resource.written.count(":OUTP ON") == 1
+
+
+@patch("instr_core.api_server.pyvisa")
+def test_agent_rejects_stale_validation_context(mock_pyvisa: MagicMock) -> None:
+    client = make_client()
+    connect_keithley(client, mock_pyvisa)
+    run_id = client.post(
+        "/agent/plan",
+        json={
+            "goal": "Sweep 0V to 1V in 0.5V steps with 10mA compliance",
+            "address": "USB0::INSTR",
+        },
+    ).json()["run"]["run_id"]
+    client.post("/agent/dry-run", json={"run_id": run_id})
+    client.app.state.address_state["USB0::INSTR"]["output"] = "ON"
+
+    response = client.post(
+        "/agent/execute",
+        json={"run_id": run_id, "confirm": True},
+        headers={"Idempotency-Key": "stale-context"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "VALIDATION_CONTEXT_STALE"

@@ -265,6 +265,7 @@ def test_multi_agent_execute_requires_confirmation(
     execute_response = client.post(
         "/agent/multi/execute",
         json={"run_id": run_id, "confirm": False},
+        headers={"Idempotency-Key": "multi-confirm-test"},
     )
 
     assert execute_response.status_code == 400
@@ -287,6 +288,7 @@ def test_multi_agent_execute_records_points_and_turns_output_off(
     execute_response = client.post(
         "/agent/multi/execute",
         json={"run_id": run_id, "confirm": True},
+        headers={"Idempotency-Key": "multi-execute-test"},
     )
 
     assert execute_response.status_code == 200
@@ -316,6 +318,7 @@ def test_multi_agent_failure_preserves_error_and_retries_shutdown(
     execute_response = client.post(
         "/agent/multi/execute",
         json={"run_id": run_id, "confirm": True},
+        headers={"Idempotency-Key": "multi-failure-test"},
     )
 
     assert execute_response.status_code == 500
@@ -340,6 +343,7 @@ def test_multi_agent_owned_address_rejects_before_visa(
     execute_response = client.post(
         "/agent/multi/execute",
         json={"run_id": run_id, "confirm": True},
+        headers={"Idempotency-Key": "multi-owned-test"},
     )
 
     assert execute_response.status_code == 409
@@ -359,6 +363,7 @@ def test_multi_agent_export_returns_csv_after_execution(
     client.post(
         "/agent/multi/execute",
         json={"run_id": run_id, "confirm": True},
+        headers={"Idempotency-Key": "multi-export-test"},
     )
 
     export_response = client.get(f"/agent/multi/runs/{run_id}/export")
