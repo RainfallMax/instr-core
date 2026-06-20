@@ -66,6 +66,7 @@ class MultiMockResource:
         self._read_response = read_response
         self.written: list[str] = []
         self.query_log: list[str] = []
+        self.closed = 0
 
     def query(self, cmd: str) -> str:
         self.query_log.append(cmd)
@@ -77,6 +78,9 @@ class MultiMockResource:
 
     def write(self, cmd: str) -> None:
         self.written.append(cmd)
+
+    def close(self) -> None:
+        self.closed += 1
 
 
 class MultiMockResourceManager:
@@ -197,6 +201,12 @@ def plan_payload() -> dict:
     }
 
 
+def connect_dual(client: TestClient) -> None:
+    for address in ("USB0::SMU::INSTR", "USB0::DMM::INSTR"):
+        response = client.post("/visa/connect", params={"address": address})
+        assert response.status_code == 200
+
+
 @patch("instr_core.api_server.pyvisa")
 def test_multi_agent_plan_and_dry_run_do_not_open_visa(
     mock_pyvisa: MagicMock,
@@ -269,6 +279,7 @@ def test_multi_agent_execute_records_points_and_turns_output_off(
     rm = MultiMockResourceManager()
     mock_pyvisa.ResourceManager.return_value = rm
     client = make_client(tmp_path)
+    connect_dual(client)
     plan_response = client.post("/agent/multi/plan", json=plan_payload())
     run_id = plan_response.json()["run"]["run_id"]
     client.post("/agent/multi/dry-run", json={"run_id": run_id})
@@ -285,6 +296,7 @@ def test_multi_agent_execute_records_points_and_turns_output_off(
     assert run["result"]["summary"]["points"] == 3
     assert rm.resources["USB0::SMU::INSTR"].written[-1] == ":OUTP OFF"
     assert rm.resources["USB0::DMM::INSTR"].query_log.count(":READ?") == 3
+    assert rm.opened == ["USB0::SMU::INSTR", "USB0::DMM::INSTR"]
     assert client.app.state.address_ownership.snapshot() == {}
 
 
@@ -296,6 +308,7 @@ def test_multi_agent_failure_preserves_error_and_retries_shutdown(
     rm = FailingMultiResourceManager()
     mock_pyvisa.ResourceManager.return_value = rm
     client = make_client(tmp_path)
+    connect_dual(client)
     plan_response = client.post("/agent/multi/plan", json=plan_payload())
     run_id = plan_response.json()["run"]["run_id"]
     client.post("/agent/multi/dry-run", json={"run_id": run_id})
@@ -314,9 +327,7 @@ def test_multi_agent_failure_preserves_error_and_retries_shutdown(
     assert client.app.state.address_ownership.snapshot() == {}
 
 
-@patch("instr_core.api.routes.agent.get_visa")
 def test_multi_agent_owned_address_rejects_before_visa(
-    mock_get_visa: MagicMock,
     tmp_path: Path,
 ) -> None:
     client = make_client(tmp_path)
@@ -332,7 +343,6 @@ def test_multi_agent_owned_address_rejects_before_visa(
     )
 
     assert execute_response.status_code == 409
-    mock_get_visa.assert_not_called()
 
 
 @patch("instr_core.api_server.pyvisa")
@@ -342,6 +352,7 @@ def test_multi_agent_export_returns_csv_after_execution(
 ) -> None:
     mock_pyvisa.ResourceManager.return_value = MultiMockResourceManager()
     client = make_client(tmp_path)
+    connect_dual(client)
     plan_response = client.post("/agent/multi/plan", json=plan_payload())
     run_id = plan_response.json()["run"]["run_id"]
     client.post("/agent/multi/dry-run", json={"run_id": run_id})

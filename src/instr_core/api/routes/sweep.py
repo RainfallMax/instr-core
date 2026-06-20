@@ -14,6 +14,7 @@ from ..dependencies import (
     get_address_ownership,
     get_registry,
     get_sweep_engine,
+    get_visa_sessions,
 )
 from ..models import (
     SweepStartRequest,
@@ -23,6 +24,7 @@ from ..models import (
 )
 from ..services.sweep_service import validate_sweep_config
 from ...sweep import SweepSession, SweepStatus
+from ..services.session_manager import SessionNotFound, SessionUnhealthy
 
 logger = logging.getLogger("instr_core.api")
 
@@ -36,6 +38,7 @@ def sweep_start(
     registry=Depends(get_registry),
     sweep_engine=Depends(get_sweep_engine),
     ownership=Depends(get_address_ownership),
+    visa_sessions=Depends(get_visa_sessions),
 ) -> SweepStartResponse:
     """Start a new IV sweep session."""
     # 1. Validate instrument_key exists in registry
@@ -85,25 +88,28 @@ def sweep_start(
             detail=f"Address '{req.address}' is already owned by an active operation",
         )
 
-    # 6. Get VISA resource
-    from ..services.visa_service import get_visa
     try:
-        rm = get_visa()
-        visa_resource = rm.open_resource(req.address)
-    except Exception as exc:
+        visa_sessions.get(req.address)
+    except (SessionNotFound, SessionUnhealthy) as exc:
         ownership.release(req.address, session_id)
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to open VISA resource: {exc}"
-        )
+            status_code=409,
+            detail=str(exc),
+        ) from exc
 
     # 7. Start sweep in background thread
     try:
         sweep_engine.start_sweep(
             session,
             registry,
-            visa_resource,
-            on_complete=lambda _: ownership.release(req.address, session_id),
+            visa_sessions.lease(req.address),
+            on_complete=lambda completed: _complete_managed_sweep(
+                completed,
+                visa_sessions,
+                ownership,
+                req.address,
+                session_id,
+            ),
         )
     except Exception as exc:
         ownership.release(req.address, session_id)
@@ -129,6 +135,18 @@ def sweep_start(
         status=SweepStatus.RUNNING.value,
         total_points=total_points,
     )
+
+
+def _complete_managed_sweep(
+    session: SweepSession,
+    visa_sessions,
+    ownership,
+    address: str,
+    owner: str,
+) -> None:
+    if session.status == SweepStatus.ERROR and session.error_message:
+        visa_sessions.mark_unhealthy(address, session.error_message)
+    ownership.release(address, owner)
 
 
 @router.get("/{session_id}/status", response_model=SweepStatusResponse)

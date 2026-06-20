@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -88,10 +89,35 @@ class SweepEngine:
         self,
         session: SweepSession,
         registry: Any,
-        visa: Any,
+        visa_or_lease: Any,
         on_complete: Callable[[SweepSession], None] | None = None,
     ) -> None:
-        """The actual sweep logic running in a background thread."""
+        """Enter an optional managed lease and execute the sweep."""
+        try:
+            context = (
+                visa_or_lease
+                if hasattr(visa_or_lease, "__enter__")
+                else nullcontext(visa_or_lease)
+            )
+            with context as visa:
+                self._execute_sweep(session, registry, visa)
+        finally:
+            if on_complete is not None:
+                try:
+                    on_complete(session)
+                except Exception:
+                    logger.exception(
+                        "Sweep %s completion callback failed",
+                        session.session_id,
+                    )
+
+    def _execute_sweep(
+        self,
+        session: SweepSession,
+        registry: Any,
+        visa: Any,
+    ) -> None:
+        """The actual sweep logic running under an acquired resource lease."""
         try:
             config = session.config
 
@@ -169,15 +195,6 @@ class SweepEngine:
                 session.status = SweepStatus.ERROR
                 session.error_message = str(exc)
                 session.completed_at = datetime.now(timezone.utc).isoformat()
-        finally:
-            if on_complete is not None:
-                try:
-                    on_complete(session)
-                except Exception:
-                    logger.exception(
-                        "Sweep %s completion callback failed",
-                        session.session_id,
-                    )
 
     @staticmethod
     def _safe_turn_off_output(visa: Any, session_id: str) -> TeardownReport:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+from contextlib import ExitStack
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -41,8 +42,9 @@ from ..dependencies import (
     get_llm_planner,
     get_registry,
     get_sweep_engine,
+    get_visa_sessions,
 )
-from ..services.visa_service import get_visa
+from ..services.session_manager import SessionNotFound, SessionUnhealthy
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -102,6 +104,7 @@ def execute(
     registry=Depends(get_registry),
     sweep_engine=Depends(get_sweep_engine),
     ownership=Depends(get_address_ownership),
+    visa_sessions=Depends(get_visa_sessions),
 ) -> AgentExecuteResponse:
     """Execute a validated agent plan after explicit confirmation."""
     run = store.get(req.run_id)
@@ -120,7 +123,7 @@ def execute(
         )
 
     try:
-        visa_resource = get_visa().open_resource(run.plan.address)
+        visa_sessions.get(run.plan.address)
         session = SweepSession(
             session_id=f"swp-{run.run_id.removeprefix('run-')}",
             instrument_key=run.plan.instrument_key,
@@ -131,9 +134,18 @@ def execute(
         sweep_engine.start_sweep(
             session,
             registry,
-            visa_resource,
-            on_complete=lambda _: ownership.release(run.plan.address, run.run_id),
+            visa_sessions.lease(run.plan.address),
+            on_complete=lambda completed: _complete_agent_sweep(
+                completed,
+                visa_sessions,
+                ownership,
+                run.plan.address,
+                run.run_id,
+            ),
         )
+    except (SessionNotFound, SessionUnhealthy) as exc:
+        ownership.release(run.plan.address, run.run_id)
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         ownership.release(run.plan.address, run.run_id)
         run.status = AgentRunStatus.FAILED
@@ -145,6 +157,18 @@ def execute(
     run.sweep_session_id = session.session_id
     store.update(run)
     return AgentExecuteResponse(run=run)
+
+
+def _complete_agent_sweep(
+    session: SweepSession,
+    visa_sessions,
+    ownership,
+    address: str,
+    owner: str,
+) -> None:
+    if session.status == SweepStatus.ERROR and session.error_message:
+        visa_sessions.mark_unhealthy(address, session.error_message)
+    ownership.release(address, owner)
 
 
 @router.get("/runs")
@@ -266,6 +290,7 @@ def execute_multi(
     req: DualKeithleyExecuteRequest,
     store: AgentRunStore = Depends(get_agent_store),
     ownership=Depends(get_address_ownership),
+    visa_sessions=Depends(get_visa_sessions),
 ) -> DualKeithleyPlanResponse:
     """Execute a confirmed dual-device software-synchronized sweep."""
     run = store.get(req.run_id)
@@ -287,7 +312,20 @@ def execute_multi(
 
     try:
         try:
-            run = execute_dual_keithley_run(run, get_visa())
+            for address in addresses:
+                visa_sessions.get(address)
+            with ExitStack() as stack:
+                resources = {
+                    address: stack.enter_context(visa_sessions.lease(address))
+                    for address in sorted(addresses)
+                }
+                run = execute_dual_keithley_run(
+                    run,
+                    resources[run.plan.source.address],
+                    resources[run.plan.meter.address],
+                )
+        except (SessionNotFound, SessionUnhealthy) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except Exception as exc:
             run.status = AgentRunStatus.FAILED
             run.error_message = str(exc)

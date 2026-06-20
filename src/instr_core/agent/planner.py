@@ -239,10 +239,12 @@ def ensure_dual_executable(run: DualKeithleyRun, confirm: bool) -> None:
         raise ValueError("Cannot execute an invalid dry-run")
 
 
-def execute_dual_keithley_run(run: DualKeithleyRun, visa_manager: Any) -> DualKeithleyRun:
+def execute_dual_keithley_run(
+    run: DualKeithleyRun,
+    source: Any,
+    meter: Any,
+) -> DualKeithleyRun:
     """Execute a software-synchronized 2600 + DMM6500 sweep."""
-    source = visa_manager.open_resource(run.plan.source.address)
-    meter = visa_manager.open_resource(run.plan.meter.address)
     points: list[DualSweepPoint] = []
     execution_error: Exception | None = None
 

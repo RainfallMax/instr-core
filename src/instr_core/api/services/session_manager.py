@@ -49,6 +49,36 @@ class ManagedVisaSession:
         self.instrument.last_error = str(exc)
 
 
+class ManagedResourceProxy:
+    """Proxy that marks only the resource whose I/O method raises."""
+
+    def __init__(self, session: ManagedVisaSession) -> None:
+        object.__setattr__(self, "_session", session)
+
+    def __getattr__(self, name: str) -> Any:
+        session: ManagedVisaSession = object.__getattribute__(self, "_session")
+        attribute = getattr(session.resource, name)
+        if not callable(attribute):
+            return attribute
+
+        def call(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return attribute(*args, **kwargs)
+            except Exception as exc:
+                session.mark_unhealthy(exc)
+                raise
+
+        return call
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        session: ManagedVisaSession = object.__getattribute__(self, "_session")
+        try:
+            setattr(session.resource, name, value)
+        except Exception as exc:
+            session.mark_unhealthy(exc)
+            raise
+
+
 class VisaSessionManager:
     """Own and serialize all connected VISA resources."""
 
@@ -119,6 +149,12 @@ class VisaSessionManager:
             raise SessionNotFound(f"Address '{address}' is not connected")
         return session
 
+    def mark_unhealthy(self, address: str, error: str) -> None:
+        """Mark a connected session unhealthy after background I/O failure."""
+        session = self.get(address)
+        with session.lock:
+            session.mark_unhealthy(RuntimeError(error))
+
     @contextmanager
     def lease(self, address: str) -> Iterator[Any]:
         """Yield a healthy resource while holding its per-address lock."""
@@ -128,11 +164,7 @@ class VisaSessionManager:
                 raise SessionUnhealthy(
                     f"Address '{address}' is unhealthy: {session.last_error}"
                 )
-            try:
-                yield session.resource
-            except Exception as exc:
-                session.mark_unhealthy(exc)
-                raise
+            yield ManagedResourceProxy(session)
 
     def list_connected(self) -> list[ConnectedInstrument]:
         """Return connection metadata ordered deterministically."""
