@@ -148,6 +148,31 @@ class AgentRunStore:
                 run.model_copy(deep=True),
             )
 
+    def update_from_sweep(self, run_id: str, sweep_session: Any) -> Any:
+        """Atomically synchronize a single-device Agent run from its Sweep."""
+        with self._lock:
+            run = self._runs.get(run_id)
+            if run is None:
+                raise KeyError(f"Run '{run_id}' not found")
+            target = RunStatus(sweep_session.status)
+            if target not in {
+                RunStatus.COMPLETED,
+                RunStatus.ABORTED,
+                RunStatus.ERROR,
+            }:
+                raise ValueError(
+                    f"Sweep '{sweep_session.session_id}' is not terminal"
+                )
+            transition_run(
+                run,
+                target,
+                reason=sweep_session.error_message,
+                now=sweep_session.completed_at,
+            )
+            run.error_message = sweep_session.error_message
+            self._persist(run)
+            return run.model_copy(deep=True)
+
     def recover_interrupted_runs(self) -> builtins.list[str]:
         """Convert persisted active runs to ERROR after process restart."""
         recovered: list[str] = []

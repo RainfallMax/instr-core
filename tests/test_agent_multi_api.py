@@ -347,6 +347,9 @@ def test_multi_agent_owned_address_rejects_before_visa(
     )
 
     assert execute_response.status_code == 409
+    stored = client.get(f"/agent/multi/runs/{run_id}").json()["run"]
+    assert stored["status"] == "error"
+    assert "already owned" in stored["error_message"]
 
 
 @patch("instr_core.api_server.pyvisa")

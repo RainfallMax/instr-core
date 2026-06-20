@@ -122,6 +122,12 @@ def _reserve_or_error(
         ) from exc
 
 
+def _fail_reserved_run(store: AgentRunStore, run, message: str) -> None:
+    failed = store.transition(run.run_id, RunStatus.ERROR, reason=message)
+    failed.error_message = message
+    store.update(failed)
+
+
 @router.post("/plan", response_model=AgentPlanResponse)
 def create_plan(
     req: AgentPlanRequest,
@@ -209,9 +215,11 @@ def execute(
     run = reservation.run
 
     if not ownership.acquire(run.plan.address, run.run_id):
+        message = f"Address '{run.plan.address}' is already owned by an active operation"
+        _fail_reserved_run(store, run, message)
         raise HTTPException(
             status_code=409,
-            detail=f"Address '{run.plan.address}' is already owned by an active operation",
+            detail=message,
         )
 
     try:
@@ -223,6 +231,8 @@ def execute(
             config=run.plan.config,
             status=SweepStatus.IDLE,
         )
+        run.sweep_session_id = session.session_id
+        store.update(run)
         sweep_engine.start_sweep(
             session,
             registry,
@@ -233,20 +243,18 @@ def execute(
                 ownership,
                 run.plan.address,
                 run.run_id,
+                store,
             ),
         )
     except (SessionNotFound, SessionUnhealthy) as exc:
         ownership.release(run.plan.address, run.run_id)
+        _fail_reserved_run(store, run, str(exc))
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         ownership.release(run.plan.address, run.run_id)
-        failed = store.transition(run.run_id, RunStatus.ERROR, reason=str(exc))
-        failed.error_message = str(exc)
-        store.update(failed)
+        _fail_reserved_run(store, run, str(exc))
         raise HTTPException(status_code=500, detail=f"Execution failed: {exc}") from exc
 
-    run.sweep_session_id = session.session_id
-    store.update(run)
     return AgentExecuteResponse(run=run)
 
 
@@ -256,10 +264,61 @@ def _complete_agent_sweep(
     ownership,
     address: str,
     owner: str,
+    store: AgentRunStore,
 ) -> None:
-    if session.status == SweepStatus.ERROR and session.error_message:
-        visa_sessions.mark_unhealthy(address, session.error_message)
-    ownership.release(address, owner)
+    try:
+        if session.status == SweepStatus.ERROR and session.error_message:
+            visa_sessions.mark_unhealthy(address, session.error_message)
+        store.update_from_sweep(owner, session)
+    finally:
+        ownership.release(address, owner)
+
+
+@router.post("/runs/{run_id}/stop", response_model=AgentPlanResponse)
+def stop_run(
+    run_id: str,
+    store: AgentRunStore = Depends(get_agent_store),
+    sweep_engine=Depends(get_sweep_engine),
+) -> AgentPlanResponse:
+    """Request stop for a running single-device Agent run."""
+    run = store.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    if isinstance(run, DualKeithleyRun):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "STOP_NOT_SUPPORTED",
+                "message": "Stop is not supported for synchronous dual-device runs",
+                "run_id": run_id,
+                "current_status": run.status,
+            },
+        )
+    if run.status == RunStatus.STOPPING:
+        return AgentPlanResponse(run=run)
+    if run.status != RunStatus.RUNNING or run.sweep_session_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "RUN_STATE_CONFLICT",
+                "message": "Only a running Agent run can be stopped",
+                "run_id": run_id,
+                "current_status": run.status,
+            },
+        )
+    stopping = store.transition(run_id, RunStatus.STOPPING, reason="stop requested")
+    try:
+        sweep_engine.stop_sweep(run.sweep_session_id)
+    except KeyError as exc:
+        failed = store.transition(
+            run_id,
+            RunStatus.ERROR,
+            reason="Linked sweep session was not found",
+        )
+        failed.error_message = str(exc)
+        store.update(failed)
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return AgentPlanResponse(run=stopping)
 
 
 @router.get("/runs")
@@ -416,9 +475,11 @@ def execute_multi(
 
     addresses = [run.plan.source.address, run.plan.meter.address]
     if not ownership.acquire_many(addresses, run.run_id):
+        message = "One or more instrument addresses are already owned"
+        _fail_reserved_run(store, run, message)
         raise HTTPException(
             status_code=409,
-            detail="One or more instrument addresses are already owned",
+            detail=message,
         )
 
     try:
@@ -436,11 +497,10 @@ def execute_multi(
                     resources[run.plan.meter.address],
                 )
         except (SessionNotFound, SessionUnhealthy) as exc:
+            _fail_reserved_run(store, run, str(exc))
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except Exception as exc:
-            failed = store.transition(run.run_id, RunStatus.ERROR, reason=str(exc))
-            failed.error_message = str(exc)
-            store.update(failed)
+            _fail_reserved_run(store, run, str(exc))
             raise HTTPException(
                 status_code=500,
                 detail=f"Execution failed: {exc}",
