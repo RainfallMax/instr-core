@@ -38,6 +38,19 @@ The desktop app adds:
 - A React-based UI for manual instrument control
 - A native desktop window via Tauri
 
+### Managed VISA sessions
+
+The FastAPI runtime owns one `VisaSessionManager`. `POST /visa/connect`
+creates and identifies one reusable resource per address. Commands, sweeps,
+agent workflows, and emergency stop borrow that resource under a per-address
+lock; API routes do not open unmanaged resources.
+
+`GET /visa/connected` reports live in-memory sessions.
+`POST /visa/disconnect` closes an idle session, while
+`POST /visa/reconnect` explicitly replaces it. Active experiment ownership
+blocks ordinary disconnect and reconnect. FastAPI shutdown attempts safe
+teardown for owned outputs before closing all sessions and the ResourceManager.
+
 ---
 
 ## Shared Python Core
@@ -224,6 +237,9 @@ Exposes REST endpoints for the React UI:
 | `/visa/connect` | POST | Connect to instrument |
 | `/visa/command` | POST | Send SCPI command |
 | `/visa/connected` | GET | List active connections |
+| `/visa/disconnect` | POST | Close an idle managed session |
+| `/visa/reconnect` | POST | Replace an idle managed session |
+| `/visa/emergency-stop` | POST | Teardown all actively owned addresses |
 
 ---
 

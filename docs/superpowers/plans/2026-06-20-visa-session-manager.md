@@ -1,6 +1,6 @@
 # VISA Session Manager Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Replace direct VISA resource opening with reusable, locked, observable managed sessions across REST, sweeps, agents, emergency stop, desktop state, and application shutdown.
 
@@ -30,7 +30,7 @@
 - Create: `tests/test_session_manager.py`
 - Create: `src/instr_core/api/services/session_manager.py`
 
-- [ ] **Step 1: Write failing manager tests**
+- [x] **Step 1: Write failing manager tests**
 
 Cover successful connect, idempotent duplicate connect, failed identify cleanup,
 concurrent duplicate connect, lease serialization, I/O health marking,
@@ -46,7 +46,7 @@ with manager.lease("USB0::1") as resource:
 manager.disconnect("USB0::1")
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run:
 
@@ -56,7 +56,7 @@ uv run pytest tests/test_session_manager.py -v
 
 Expected: import failure because the manager does not exist.
 
-- [ ] **Step 3: Implement typed session lifecycle**
+- [x] **Step 3: Implement typed session lifecycle**
 
 Implement:
 
@@ -81,7 +81,7 @@ class ManagedVisaSession:
 closes duplicate concurrent resources, and performs no hardware I/O while
 holding its registry lock.
 
-- [ ] **Step 4: Verify GREEN and quality**
+- [x] **Step 4: Verify GREEN and quality**
 
 Run:
 
@@ -91,7 +91,7 @@ uv run ruff check src/instr_core/api/services/session_manager.py tests/test_sess
 uv run mypy src/instr_core/api/services/session_manager.py
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/instr_core/api/services/session_manager.py tests/test_session_manager.py
@@ -106,7 +106,7 @@ git commit -m "feat: add managed visa sessions"
 - Modify: `src/instr_core/api/models.py`
 - Modify: `src/instr_core/api/routes/visa.py`
 
-- [ ] **Step 1: Add failing API lifecycle tests**
+- [x] **Step 1: Add failing API lifecycle tests**
 
 Prove:
 
@@ -118,7 +118,7 @@ Prove:
 - reconnect opens a fresh resource;
 - disconnected commands return 409 without `open_resource`.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run:
 
@@ -128,7 +128,7 @@ uv run pytest tests/test_api_server.py -v
 
 Expected: new lifecycle tests fail against current direct-resource routes.
 
-- [ ] **Step 3: Initialize and expose the manager**
+- [x] **Step 3: Initialize and expose the manager**
 
 Add `get_visa_sessions(request)` and initialize:
 
@@ -139,23 +139,23 @@ app.state.visa_sessions = VisaSessionManager(get_visa)
 Add `_clear_address_tracking(request, address)` to atomically remove schema and
 virtual state after disconnect.
 
-- [ ] **Step 4: Extend connection response metadata**
+- [x] **Step 4: Extend connection response metadata**
 
 Add optional `connected_at`, `healthy`, and `last_error` fields to
 `ConnectedInstrument` so existing clients remain compatible.
 
-- [ ] **Step 5: Refactor VISA routes**
+- [x] **Step 5: Refactor VISA routes**
 
 Use `manager.connect` with an identity callback that parses `*IDN?` and resolves
 the Registry. Implement real connected list, disconnect, and reconnect.
 Translate manager errors to 404, 409, or 500 as specified.
 
-- [ ] **Step 6: Use managed lease for commands and emergency stop**
+- [x] **Step 6: Use managed lease for commands and emergency stop**
 
 Preflight remains before lease acquisition. Replace every direct
 `open_resource` in `visa.py` with `manager.lease(address)`.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
@@ -180,7 +180,7 @@ git commit -m "feat: manage visa connection lifecycle"
 - Modify: `src/instr_core/api/routes/sweep.py`
 - Modify: `src/instr_core/api/routes/agent.py`
 
-- [ ] **Step 1: Add failing managed-session execution tests**
+- [x] **Step 1: Add failing managed-session execution tests**
 
 Assert sweep and agent execution:
 
@@ -190,7 +190,7 @@ Assert sweep and agent execution:
 - retain the connected session after completion;
 - mark the session unhealthy on VISA I/O failure.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run:
 
@@ -198,18 +198,18 @@ Run:
 uv run pytest tests/test_api_server.py tests/test_agent_api.py -v
 ```
 
-- [ ] **Step 3: Borrow a session lease for background sweeps**
+- [x] **Step 3: Borrow a session lease for background sweeps**
 
 Add a lease object that may be entered before thread start and released from
 the sweep completion callback. Do not allow disconnect while ownership is
 active.
 
-- [ ] **Step 4: Refactor route consumers**
+- [x] **Step 4: Refactor route consumers**
 
 Remove direct `get_visa().open_resource` calls from sweep and single-agent
 routes. Preserve ownership release on all startup failures.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```bash
 uv run pytest tests/test_api_server.py tests/test_agent_api.py tests/test_sweep_engine.py -v
@@ -224,19 +224,19 @@ git commit -m "refactor: run sweeps through managed sessions"
 - Modify: `src/instr_core/agent/planner.py`
 - Modify: `src/instr_core/api/routes/agent.py`
 
-- [ ] **Step 1: Add failing dual-session tests**
+- [x] **Step 1: Add failing dual-session tests**
 
 Prove both addresses must be connected, resources are not reopened, leases are
 acquired in sorted address order, both remain connected after completion, and
 an I/O error marks only the failing session unhealthy.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```bash
 uv run pytest tests/test_agent_multi_api.py -v
 ```
 
-- [ ] **Step 3: Pass borrowed resources into the planner**
+- [x] **Step 3: Pass borrowed resources into the planner**
 
 Change:
 
@@ -246,12 +246,12 @@ execute_dual_keithley_run(run, source, meter)
 
 The planner no longer accepts a ResourceManager or opens resources.
 
-- [ ] **Step 4: Borrow two managed sessions safely**
+- [x] **Step 4: Borrow two managed sessions safely**
 
 The route borrows sorted addresses and maps resources back to source/meter
 roles. It releases leases in reverse order in `finally`.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```bash
 uv run pytest tests/test_agent_multi_api.py tests/test_session_manager.py -v
@@ -269,30 +269,30 @@ git commit -m "refactor: use managed dual instrument sessions"
 - Modify: `desktop/src/components/ConnectedPanel.tsx`
 - Modify: `desktop/src/i18n.ts`
 
-- [ ] **Step 1: Add shutdown test**
+- [x] **Step 1: Add shutdown test**
 
 Use `TestClient` as a context manager and prove lifespan shutdown attempts
 teardown for all owned managed resources, closes every session, and closes the
 ResourceManager despite individual errors.
 
-- [ ] **Step 2: Implement lifespan cleanup**
+- [x] **Step 2: Implement lifespan cleanup**
 
 Call a dependency helper that performs teardown via managed leases, then calls
 `VisaSessionManager.shutdown()`. Continue after every per-session error and log
 the summary.
 
-- [ ] **Step 3: Hydrate desktop connections**
+- [x] **Step 3: Hydrate desktop connections**
 
 On mount, fetch `/visa/connected`; replace local state. `handleConnect` updates
 by address rather than appending duplicates.
 
-- [ ] **Step 4: Add desktop disconnect**
+- [x] **Step 4: Add desktop disconnect**
 
 Extend `ConnectedPanelProps` with `onDisconnect`. The app calls
 `POST /visa/disconnect`, removes only after success, clears selected terminal
 address, and displays translated errors.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```bash
 uv run pytest tests/test_api_server.py -v
@@ -308,12 +308,12 @@ git commit -m "feat: close managed sessions and sync desktop state"
 - Modify: `ARCHITECTURE.md`
 - Modify: `docs/superpowers/plans/2026-06-20-visa-session-manager.md`
 
-- [ ] **Step 1: Update architecture and desktop documentation**
+- [x] **Step 1: Update architecture and desktop documentation**
 
 Document the session manager, real connected state, disconnect/reconnect APIs,
 managed-resource requirement, and shutdown cleanup.
 
-- [ ] **Step 2: Audit direct resource opening**
+- [x] **Step 2: Audit direct resource opening**
 
 Run:
 
@@ -323,7 +323,7 @@ rg -n "open_resource" src/instr_core
 
 Expected: only `session_manager.py` opens resources.
 
-- [ ] **Step 3: Run full quality gates**
+- [x] **Step 3: Run full quality gates**
 
 ```bash
 uv run ruff check src tests
@@ -333,13 +333,44 @@ cd desktop && npm run build
 cd desktop/src-tauri && cargo fmt --check && cargo clippy -- -D warnings && cargo test
 ```
 
-- [ ] **Step 4: Record mock-only qualification**
+- [x] **Step 4: Record mock-only qualification**
 
 Append exact verification output and state that no real VISA hardware was used.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/DESKTOP.md ARCHITECTURE.md docs/superpowers/plans/2026-06-20-visa-session-manager.md
 git commit -m "docs: record managed visa session verification"
 ```
+
+## Completion Evidence
+
+Completed on 2026-06-20 in branch `codex/visa-session-manager`.
+
+```text
+uv run ruff check src tests
+All checks passed!
+
+uv run mypy src
+Success: no issues found in 33 source files
+
+uv run pytest tests/ -v
+199 passed in 10.83s
+
+cd desktop && npm run build
+TypeScript and Vite production build completed successfully.
+
+cd desktop/src-tauri
+cargo fmt --check
+cargo clippy -- -D warnings
+cargo test
+All commands completed with exit code 0 and zero Rust test failures.
+
+rg -n "open_resource" src/instr_core
+src/instr_core/api/services/session_manager.py:114
+```
+
+Behavior is qualified with deterministic mock VISA resources only. Real
+Keithley/PyVISA hardware qualification remains pending in the productization
+roadmap.

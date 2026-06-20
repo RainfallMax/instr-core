@@ -30,6 +30,12 @@ Tauri (Rust)          HTTP         Python (FastAPI)
 
 ## Communication
 
+The backend keeps one managed VISA session per connected address. Connecting
+the same address twice is idempotent. The React app restores its Connected list
+from `GET /visa/connected` after refresh and explicitly closes idle sessions
+through `POST /visa/disconnect?address=...`. Active experiments reject ordinary
+disconnect requests.
+
 ### Frontend → Backend
 
 ```typescript
@@ -37,6 +43,11 @@ const API_BASE = "http://localhost:8765";
 
 // GET request
 const instruments = await fetch(`${API_BASE}/instruments`).then(r => r.json());
+
+// Connect once before commands or experiments
+await fetch(`${API_BASE}/visa/connect?address=${encodeURIComponent(address)}`, {
+  method: "POST",
+});
 
 // POST request
 const result = await fetch(`${API_BASE}/visa/command`, {
@@ -49,6 +60,9 @@ const result = await fetch(`${API_BASE}/visa/command`, {
   }),
 }).then(r => r.json());
 ```
+
+Commands and experiment execution reuse the connected resource; the backend
+does not reopen a VISA resource for each request.
 
 ### Backend → Frontend
 
