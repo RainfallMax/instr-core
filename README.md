@@ -119,6 +119,7 @@ Current Agent API endpoints:
 | `POST /agent/plan` | Parse a natural-language IV sweep goal into a structured plan. |
 | `POST /agent/dry-run` | Validate the plan, expand command preview, estimate points, and report safety issues. |
 | `POST /agent/execute` | Start the sweep only after valid dry-run and `confirm=true`. |
+| `POST /agent/runs/{run_id}/stop` | Request a safe stop for a running single-device Agent run. |
 | `GET /agent/runs` | List persisted run records across single-device and multi-device workflows. |
 | `GET /agent/runs/{run_id}` | Inspect the stored agent run, validation result, and linked sweep session. |
 | `POST /agent/llm/plan` | Ask a configured LLM to produce a structured dual-device plan request. |
@@ -132,6 +133,15 @@ The single-device IV sweep parser remains deterministic. The dual-device workflo
 also supports an optional LLM planner, but the safety boundary is unchanged: the
 LLM must return a typed `DualKeithleyPlanRequest`, never raw SCPI, and the run
 still requires dry-run validation before execution.
+
+Runs use one persisted lifecycle:
+`planned → dry_run → running → stopping → completed/aborted/error`. Execute
+requests require an `Idempotency-Key` header. Reusing the same key safely
+returns the existing run; a different key cannot execute the same run again.
+Dry-run records a validation-context fingerprint, so changes to the plan,
+schema, connected instrument identity, or tracked address state require a new
+dry-run. On backend restart, interrupted `running` or `stopping` records are
+recovered as `error` instead of being reported as still active.
 
 ---
 
@@ -444,10 +454,17 @@ Execute only after review:
 ```bash
 curl -X POST http://localhost:8765/agent/execute \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 8e12e64f-14d6-4b6f-b6b2-65c8cb790551" \
   -d '{"run_id": "run-xxxxxxxx", "confirm": true}'
 ```
 
-The execute step is intentionally confirmation-gated. Calling it without `confirm=true` returns an error.
+The execute step is confirmation-gated and idempotent. Calling it without
+`confirm=true` or a valid `Idempotency-Key` returns an error. If the validation
+context changed after dry-run, repeat dry-run before retrying.
+
+```bash
+curl -X POST http://localhost:8765/agent/runs/run-xxxxxxxx/stop
+```
 
 ### 4. Dual Keithley Agent: 2600 + DMM6500
 
@@ -493,12 +510,15 @@ curl -X POST http://localhost:8765/agent/multi/dry-run \
 
 curl -X POST http://localhost:8765/agent/multi/execute \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: d8449d91-f109-46ba-ad5f-d5841c520de6" \
   -d '{"run_id": "run-xxxxxxxx", "confirm": true}'
 
 curl http://localhost:8765/agent/multi/runs/run-xxxxxxxx/export
 ```
 
 The Tauri desktop app exposes the same workflow as the **Keithley Dual** panel.
+Dual-device execution is synchronous in v0.2.x, so the Agent stop endpoint
+rejects dual runs instead of claiming an unsafe partial stop.
 
 The desktop frontend uses mature open-source UI infrastructure:
 

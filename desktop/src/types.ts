@@ -278,7 +278,14 @@ export interface DualKeithleyRun {
   run_id: string;
   plan: DualKeithleyPlan;
   validation: AgentValidationResult | null;
-  status: "planned" | "dry_run" | "running" | "completed" | "failed";
+  status:
+    | "planned"
+    | "dry_run"
+    | "running"
+    | "stopping"
+    | "completed"
+    | "aborted"
+    | "error";
   error_message: string | null;
   result: DualSweepResult | null;
 }

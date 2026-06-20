@@ -19,17 +19,17 @@
 - Modify: `src/instr_core/sweep/models.py`
 - Modify: `src/instr_core/sweep/engine.py`
 
-- [ ] Write tests for every allowed/forbidden transition, terminal immutability,
+- [x] Write tests for every allowed/forbidden transition, terminal immutability,
   timestamp/history updates, and legacy `failed`/`idle` migration.
-- [ ] Run `uv run pytest tests/test_run_lifecycle.py -v` and verify RED.
-- [ ] Add `RunStatus`, `RunTransition`, `InvalidRunTransition`,
+- [x] Run `uv run pytest tests/test_run_lifecycle.py -v` and verify RED.
+- [x] Add `RunStatus`, `RunTransition`, `InvalidRunTransition`,
   `transition_run`, `can_transition`, and `is_terminal`.
-- [ ] Replace Agent/Sweep status enums with aliases to `RunStatus`; add
+- [x] Replace Agent/Sweep status enums with aliases to `RunStatus`; add
   lifecycle timestamps and histories to run/session models.
-- [ ] Refactor SweepEngine start, stop, completion, abort, and error to use
+- [x] Refactor SweepEngine start, stop, completion, abort, and error to use
   `transition_run`.
-- [ ] Run lifecycle and Sweep tests, Ruff, and Mypy.
-- [ ] Commit: `feat: unify experiment run lifecycle`.
+- [x] Run lifecycle and Sweep tests, Ruff, and Mypy.
+- [x] Commit: `feat: unify experiment run lifecycle`.
 
 ### Task 2: Atomic Agent Store and Recovery
 
@@ -37,15 +37,15 @@
 - Modify: `src/instr_core/agent/store.py`
 - Modify: `tests/test_agent_store.py`
 
-- [ ] Write tests proving duplicate create rejection, copy-returning reads,
+- [x] Write tests proving duplicate create rejection, copy-returning reads,
   atomic transition under concurrency, atomic temp-file replacement, corrupt
   quarantine, stale temp cleanup, and active-run restart recovery.
-- [ ] Verify RED.
-- [ ] Implement deep-copy `get/list`, duplicate-safe `create`, lock-owned
+- [x] Verify RED.
+- [x] Implement deep-copy `get/list`, duplicate-safe `create`, lock-owned
   `transition`, atomic `os.replace` persistence, quarantine, and
   `recover_interrupted_runs`.
-- [ ] Run store tests and quality checks.
-- [ ] Commit: `feat: make agent run storage atomic`.
+- [x] Run store tests and quality checks.
+- [x] Commit: `feat: make agent run storage atomic`.
 
 ### Task 3: Validation Context Fingerprints
 
@@ -56,14 +56,14 @@
 - Modify: `src/instr_core/api/dependencies.py`
 - Modify: `src/instr_core/api/routes/agent.py`
 
-- [ ] Test deterministic fingerprints, changes for plan/schema/IDN/state, and
+- [x] Test deterministic fingerprints, changes for plan/schema/IDN/state, and
   ordering independence.
-- [ ] Verify RED.
-- [ ] Implement canonical JSON fingerprint computation for single and dual
+- [x] Verify RED.
+- [x] Implement canonical JSON fingerprint computation for single and dual
   runs using Registry, managed session metadata, and address-state snapshots.
-- [ ] Persist fingerprint and validated timestamp during dry-run.
-- [ ] Add helpers returning full address-state snapshots.
-- [ ] Run focused tests and commit:
+- [x] Persist fingerprint and validated timestamp during dry-run.
+- [x] Add helpers returning full address-state snapshots.
+- [x] Run focused tests and commit:
   `feat: bind dry runs to validation context`.
 
 ### Task 4: Atomic Idempotency Reservations
@@ -76,18 +76,18 @@
 - Modify: `tests/test_agent_api.py`
 - Modify: `tests/test_agent_multi_api.py`
 
-- [ ] Test key validation, one winner among concurrent keys, same-key replay,
+- [x] Test key validation, one winner among concurrent keys, same-key replay,
   different-key conflict, fingerprint conflict, terminal replay, and attempt
   count.
-- [ ] Verify RED.
-- [ ] Add `ExecutionReservation`, reservation result/errors, persisted
+- [x] Verify RED.
+- [x] Add `ExecutionReservation`, reservation result/errors, persisted
   execution key/fingerprint/attempts, and `reserve_execution`.
-- [ ] Require `Idempotency-Key` headers on execute endpoints and return stable
+- [x] Require `Idempotency-Key` headers on execute endpoints and return stable
   HTTP 400/409 detail objects.
-- [ ] Recompute fingerprints before reservation; reject stale contexts before
+- [x] Recompute fingerprints before reservation; reject stale contexts before
   ownership or VISA.
-- [ ] Make same-key replay return the current stored run without hardware.
-- [ ] Run focused API/store tests and commit:
+- [x] Make same-key replay return the current stored run without hardware.
+- [x] Run focused API/store tests and commit:
   `feat: make agent execution idempotent`.
 
 ### Task 5: Sweep Synchronization and Stop
@@ -100,15 +100,15 @@
 - Modify: `tests/test_agent_api.py`
 - Modify: `tests/test_api_server.py`
 
-- [ ] Test Agent completion/error/abort synchronization, `RUNNING → STOPPING`,
+- [x] Test Agent completion/error/abort synchronization, `RUNNING → STOPPING`,
   repeated stop, terminal stop conflicts, and dual stop unsupported.
-- [ ] Verify RED.
-- [ ] Add `update_from_sweep`; make callbacks persist Agent terminal outcomes
+- [x] Verify RED.
+- [x] Add `update_from_sweep`; make callbacks persist Agent terminal outcomes
   before releasing ownership.
-- [ ] Add `POST /agent/runs/{run_id}/stop`; update Sweep stop endpoint and
+- [x] Add `POST /agent/runs/{run_id}/stop`; update Sweep stop endpoint and
   engine transitions.
-- [ ] Ensure startup errors transition reserved runs to `ERROR`.
-- [ ] Run focused tests and commit:
+- [x] Ensure startup errors transition reserved runs to `ERROR`.
+- [x] Run focused tests and commit:
   `feat: synchronize and stop agent runs`.
 
 ### Task 6: Desktop Contract, Migration, and Full Verification
@@ -122,17 +122,31 @@
 - Modify: `ARCHITECTURE.md`
 - Modify: `docs/superpowers/plans/2026-06-20-run-lifecycle-idempotency.md`
 
-- [ ] Add the unified status union and UUID idempotency-key reuse to the dual
+- [x] Add the unified status union and UUID idempotency-key reuse to the dual
   UI; disable invalid execution and show `error`.
-- [ ] Document lifecycle, required header, stale dry-run, stop, and restart
+- [x] Document lifecycle, required header, stale dry-run, stop, and restart
   recovery.
-- [ ] Audit direct status assignment:
+- [x] Audit direct status assignment:
   `rg -n "\\.status\\s*=" src/instr_core`.
-- [ ] Run:
+- [x] Run:
   `uv run ruff check src tests`,
   `uv run mypy src`,
   `uv run pytest tests/ -v`,
   `npm run build`,
   and Rust fmt/clippy/test.
-- [ ] Record exact evidence and mock-only qualification.
-- [ ] Commit: `docs: record idempotent lifecycle verification`.
+- [x] Record exact evidence and mock-only qualification.
+- [x] Commit: `docs: record idempotent lifecycle verification`.
+
+### Verification evidence
+
+- `uv run ruff check src tests`: passed.
+- `uv run mypy src`: passed with no issues in 35 source files.
+- `uv run pytest tests/ -q`: 236 tests passed.
+- `npm run build`: TypeScript and Vite production build passed.
+- `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`,
+  and `cargo test --all-targets --all-features`: passed; the Rust crate
+  currently contains no unit tests.
+- Direct status assignment audit found only `transition_run` mutating
+  `.status`; other matches are comparisons.
+- Hardware behavior is covered with mock VISA resources only. No physical
+  instrument qualification was performed.

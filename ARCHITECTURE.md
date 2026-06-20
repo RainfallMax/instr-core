@@ -51,6 +51,27 @@ lock; API routes do not open unmanaged resources.
 blocks ordinary disconnect and reconnect. FastAPI shutdown attempts safe
 teardown for owned outputs before closing all sessions and the ResourceManager.
 
+### Run lifecycle and execution reservation
+
+Agent runs and Sweep sessions share `RunStatus` and the transition service in
+`run_lifecycle.py`. The persisted lifecycle is
+`planned → dry_run → running → stopping → completed/aborted/error`; terminal
+states are immutable.
+
+Dry-run persists a SHA-256 fingerprint of the plan, schemas, connected
+instrument identities, session health, and tracked address state. Execute
+recomputes that context before hardware access and rejects stale validation.
+`AgentRunStore.reserve_execution` atomically records the required
+`Idempotency-Key`, fingerprint, and attempt count before address ownership or
+VISA access. Same-key retries replay the stored run without executing hardware.
+
+Single-device Agent callbacks persist the linked Sweep terminal state before
+releasing address ownership. The stop endpoint transitions
+`running → stopping`; the Sweep worker then records `aborted`. Synchronous
+dual-device runs do not advertise partial stop support. Store startup
+quarantines corrupt records and converts interrupted `running`/`stopping` runs
+to `error`.
+
 ---
 
 ## Shared Python Core
@@ -240,6 +261,9 @@ Exposes REST endpoints for the React UI:
 | `/visa/disconnect` | POST | Close an idle managed session |
 | `/visa/reconnect` | POST | Replace an idle managed session |
 | `/visa/emergency-stop` | POST | Teardown all actively owned addresses |
+| `/agent/execute` | POST | Idempotently execute a validated single-device run |
+| `/agent/runs/{run_id}/stop` | POST | Stop a running single-device Agent run |
+| `/agent/multi/execute` | POST | Idempotently execute a validated dual-device run |
 
 ---
 

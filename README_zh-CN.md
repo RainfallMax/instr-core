@@ -109,9 +109,17 @@ Agent API 会解析成结构化 plan：
 | `POST /agent/plan` | 将自然语言 IV sweep 目标解析成结构化 plan。 |
 | `POST /agent/dry-run` | 校验 plan、展开命令预览、估算点数并返回安全问题。 |
 | `POST /agent/execute` | 仅在 dry-run 有效且 `confirm=true` 时启动 sweep。 |
+| `POST /agent/runs/{run_id}/stop` | 请求安全停止正在运行的单仪器 Agent run。 |
 | `GET /agent/runs/{run_id}` | 查询 agent run、校验结果和关联 sweep session。 |
 
 第一版使用确定性的 rule-based parser，而不是直接接 LLM provider。这样硬件边界是可测试的：未来 LLM 也只能生成同一个结构化 `AgentPlan`，不能直接发裸 SCPI。
+
+Run 使用统一持久化状态机：
+`planned → dry_run → running → stopping → completed/aborted/error`。执行接口
+必须提供 `Idempotency-Key` 请求头；同一个 key 重试会返回已有 run，不会重复
+触碰硬件，不同 key 不能再次执行同一个 run。dry-run 会记录校验上下文指纹；
+plan、Schema、已连接仪器身份或地址状态变化后，必须重新 dry-run。后端重启时，
+遗留的 `running`/`stopping` 记录会恢复为 `error`，不会继续显示为活动任务。
 
 ---
 
@@ -423,10 +431,17 @@ curl -X POST http://localhost:8765/agent/dry-run \
 ```bash
 curl -X POST http://localhost:8765/agent/execute \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 8e12e64f-14d6-4b6f-b6b2-65c8cb790551" \
   -d '{"run_id": "run-xxxxxxxx", "confirm": true}'
 ```
 
-执行步骤有意要求显式确认。不带 `confirm=true` 调用会直接返回错误。
+执行步骤要求显式确认和幂等键。不带 `confirm=true` 或有效
+`Idempotency-Key` 会直接返回错误；dry-run 后上下文发生变化时，必须重新
+dry-run。
+
+```bash
+curl -X POST http://localhost:8765/agent/runs/run-xxxxxxxx/stop
+```
 
 ### 4. 配置你的 IDE / AI 助手（MCP）
 

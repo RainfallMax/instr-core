@@ -352,6 +352,18 @@ def test_multi_agent_owned_address_rejects_before_visa(
     assert "already owned" in stored["error_message"]
 
 
+def test_multi_agent_stop_is_explicitly_unsupported(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    run_id = client.post("/agent/multi/plan", json=plan_payload()).json()["run"]["run_id"]
+
+    response = client.post(f"/agent/runs/{run_id}/stop")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "STOP_NOT_SUPPORTED"
+    stored = client.get(f"/agent/multi/runs/{run_id}").json()["run"]
+    assert stored["status"] == "planned"
+
+
 @patch("instr_core.api_server.pyvisa")
 def test_multi_agent_export_returns_csv_after_execution(
     mock_pyvisa: MagicMock,

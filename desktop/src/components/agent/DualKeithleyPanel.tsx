@@ -116,6 +116,7 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
   const [meterRange, setMeterRange] = useState("10");
   const [direction, setDirection] = useState<SweepConfig["direction"]>("UP");
   const [run, setRun] = useState<DualKeithleyRun | null>(null);
+  const executionKeyRef = useRef<string | null>(null);
   const [runs, setRuns] = useState<AgentRunSummary[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -191,13 +192,17 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
     refreshRuns();
   }, []);
 
-  const requestRun = async (path: string, body: unknown): Promise<DualKeithleyRun> => {
+  const requestRun = async (
+    path: string,
+    body: unknown,
+    headers: Record<string, string> = {},
+  ): Promise<DualKeithleyRun> => {
     setBusy(true);
     setError(null);
     try {
       const response = await fetch(`${API_BASE}${path}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...headers },
         body: JSON.stringify(body),
       });
       const data = (await response.json().catch(() => ({}))) as Partial<DualKeithleyPlanResponse> & {
@@ -219,6 +224,7 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
 
   const handlePlan = async () => {
     await requestRun("/agent/multi/plan", requestBody);
+    executionKeyRef.current = null;
   };
 
   const handleAiPlan = async () => {
@@ -226,11 +232,13 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
       goal,
       experiment_type: "dual_keithley_sweep",
     });
+    executionKeyRef.current = null;
   };
 
   const handleDryRun = async () => {
     const planned = run ?? (await requestRun("/agent/multi/plan", requestBody));
     await requestRun("/agent/multi/dry-run", { run_id: planned.run_id });
+    executionKeyRef.current = null;
   };
 
   const handleExecute = async () => {
@@ -240,11 +248,18 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
     }
     if (!executable.validation) {
       executable = await requestRun("/agent/multi/dry-run", { run_id: executable.run_id });
+      executionKeyRef.current = null;
     }
-    await requestRun("/agent/multi/execute", {
-      run_id: executable.run_id,
-      confirm: true,
-    });
+    const executionKey = executionKeyRef.current ?? crypto.randomUUID();
+    executionKeyRef.current = executionKey;
+    await requestRun(
+      "/agent/multi/execute",
+      {
+        run_id: executable.run_id,
+        confirm: true,
+      },
+      { "Idempotency-Key": executionKey },
+    );
   };
 
   const handleExport = () => {
@@ -264,6 +279,7 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
         throw new Error(data.detail ?? `Load failed: ${response.status}`);
       }
       applyRun(data.run);
+      executionKeyRef.current = null;
     } catch (err) {
       setError(err instanceof Error ? err.message : t("common.loadFailed"));
     } finally {
@@ -288,7 +304,14 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
       key: "execute",
       title: t("dual.workflowExecute"),
       description: t("dual.workflowExecuteDescription"),
-      state: run?.status === "completed" ? "done" : run?.status === "running" ? "active" : "idle",
+      state:
+        run?.status === "completed"
+          ? "done"
+          : run?.status === "running" || run?.status === "stopping"
+            ? "active"
+            : run?.status === "error" || run?.status === "aborted"
+              ? "blocked"
+              : "idle",
     },
     {
       key: "record",
@@ -297,6 +320,9 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
       state: run?.result ? "done" : "idle",
     },
   ];
+  const runIsActive = run?.status === "running" || run?.status === "stopping";
+  const canExecute =
+    !busy && run?.status === "dry_run" && run.validation?.valid === true;
 
   return (
     <div className="dual-keithley-panel">
@@ -396,10 +422,10 @@ export default function DualKeithleyPanel({ connected }: DualKeithleyPanelProps)
           ))}
         </datalist>
         <div className="dual-actions">
-          <Button onClick={handleAiPlan} disabled={busy}>{t("dual.aiPlan")}</Button>
-          <Button onClick={handlePlan} disabled={busy}>{t("dual.plan")}</Button>
-          <Button onClick={handleDryRun} disabled={busy}>{t("dual.dryRun")}</Button>
-          <Button onClick={handleExecute} disabled={busy} variant="destructive">{t("dual.execute")}</Button>
+          <Button onClick={handleAiPlan} disabled={busy || runIsActive}>{t("dual.aiPlan")}</Button>
+          <Button onClick={handlePlan} disabled={busy || runIsActive}>{t("dual.plan")}</Button>
+          <Button onClick={handleDryRun} disabled={busy || runIsActive}>{t("dual.dryRun")}</Button>
+          <Button onClick={handleExecute} disabled={!canExecute} variant="destructive">{t("dual.execute")}</Button>
           <Button onClick={handleExport} disabled={!run?.result} variant="outline">{t("dual.exportCsv")}</Button>
         </div>
         {error && <div className="sweep-error">{error}</div>}

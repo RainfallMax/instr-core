@@ -302,6 +302,35 @@ def test_agent_stop_transitions_to_aborted(mock_pyvisa: MagicMock) -> None:
 
 
 @patch("instr_core.api_server.pyvisa")
+def test_repeated_agent_stop_returns_stopping_run(mock_pyvisa: MagicMock) -> None:
+    client = make_client()
+    connect_keithley(client, mock_pyvisa)
+    run_id = client.post(
+        "/agent/plan",
+        json={
+            "goal": "Sweep 0V to 10V in 0.1V steps with 10mA compliance",
+            "address": "USB0::INSTR",
+        },
+    ).json()["run"]["run_id"]
+    client.post("/agent/dry-run", json={"run_id": run_id})
+    client.post(
+        "/agent/execute",
+        json={"run_id": run_id, "confirm": True},
+        headers={"Idempotency-Key": "repeated-stop-test"},
+    )
+    client.app.state.sweep_engine.stop_sweep = MagicMock()
+
+    first = client.post(f"/agent/runs/{run_id}/stop")
+    second = client.post(f"/agent/runs/{run_id}/stop")
+
+    assert first.status_code == 200
+    assert first.json()["run"]["status"] == "stopping"
+    assert second.status_code == 200
+    assert second.json()["run"]["status"] == "stopping"
+    client.app.state.sweep_engine.stop_sweep.assert_called_once()
+
+
+@patch("instr_core.api_server.pyvisa")
 def test_terminal_agent_cannot_be_stopped(mock_pyvisa: MagicMock) -> None:
     client = make_client()
     connect_keithley(client, mock_pyvisa)
