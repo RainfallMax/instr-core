@@ -10,7 +10,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api.dependencies import init_app_state
+from .api.dependencies import init_app_state, shutdown_app_state
 from .api.routes import (
     agent_router,
     instruments_router,
@@ -30,8 +30,14 @@ pyvisa: Any | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_app_state(app)
-    yield
-    logger.info("API server shutting down")
+    try:
+        yield
+    finally:
+        errors = shutdown_app_state(app)
+        if errors:
+            logger.error("API shutdown completed with errors: %s", "; ".join(errors))
+        else:
+            logger.info("API server shutdown completed cleanly")
 
 
 def create_api_app() -> FastAPI:

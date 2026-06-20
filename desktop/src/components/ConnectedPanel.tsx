@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ConnectedPanelProps } from "../types";
 import { Button } from "./ui/Button";
@@ -9,14 +10,34 @@ export default function ConnectedPanel({
   onSelect,
   onBrowseSchema,
   onOpenTerminal,
+  onDisconnect,
 }: ConnectedPanelProps) {
   const { t } = useTranslation();
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const disconnect = async (address: string) => {
+    if (!onDisconnect) return;
+    setDisconnecting(address);
+    setError(null);
+    try {
+      await onDisconnect(address);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : t("panels.disconnectFailed"),
+      );
+    } finally {
+      setDisconnecting(null);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>{t("panels.connected")}</CardTitle>
       </CardHeader>
       <CardContent>
+      {error && <div className="visa-error">{error}</div>}
       <ul className="list">
         {connected.map((inst) => (
           <li key={inst.address} className="list-item">
@@ -58,6 +79,32 @@ export default function ConnectedPanel({
                   onClick={() => onOpenTerminal?.(inst.address)}
                 >
                   {t("panels.terminal")}
+                </Button>
+                <Button
+                  className="action-btn disconnect"
+                  variant="destructive"
+                  size="sm"
+                  disabled={disconnecting === inst.address}
+                  onClick={() => disconnect(inst.address)}
+                >
+                  {disconnecting === inst.address
+                    ? t("panels.disconnecting")
+                    : t("panels.disconnect")}
+                </Button>
+              </div>
+            )}
+            {!inst.schema_key && onDisconnect && (
+              <div className="instrument-actions">
+                <Button
+                  className="action-btn disconnect"
+                  variant="destructive"
+                  size="sm"
+                  disabled={disconnecting === inst.address}
+                  onClick={() => disconnect(inst.address)}
+                >
+                  {disconnecting === inst.address
+                    ? t("panels.disconnecting")
+                    : t("panels.disconnect")}
                 </Button>
               </div>
             )}

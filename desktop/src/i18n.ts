@@ -54,6 +54,9 @@ export const resources = {
         noSchema: "No schema matched",
         browseSchema: "Browse Schema",
         terminal: "Terminal",
+        disconnect: "Disconnect",
+        disconnecting: "Disconnecting...",
+        disconnectFailed: "Disconnect failed",
       },
       terminal: {
         title: "SCPI Terminal",
@@ -222,6 +225,9 @@ export const resources = {
         noSchema: "未匹配 Schema",
         browseSchema: "浏览 Schema",
         terminal: "终端",
+        disconnect: "断开",
+        disconnecting: "正在断开...",
+        disconnectFailed: "断开连接失败",
       },
       terminal: {
         title: "SCPI 终端",

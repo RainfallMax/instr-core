@@ -152,6 +152,7 @@ export interface ConnectedPanelProps {
   onSelect: (address: string) => void;
   onBrowseSchema?: (schemaKey: string) => void;
   onOpenTerminal?: (address: string) => void;
+  onDisconnect?: (address: string) => Promise<void>;
 }
 
 export interface ScpiTerminalProps {

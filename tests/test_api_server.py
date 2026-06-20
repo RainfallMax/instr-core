@@ -50,6 +50,7 @@ class MockResourceManager:
         self._idn = idn_response
         self.resources: list[MockResource] = []
         self.opened: list[str] = []
+        self.closed = 0
 
     def list_resources(self) -> tuple[str, ...]:
         return ("USB0::0x05E6::0x2600::INSTR",)
@@ -59,6 +60,9 @@ class MockResourceManager:
         resource = MockResource(self._idn)
         self.resources.append(resource)
         return resource
+
+    def close(self) -> None:
+        self.closed += 1
 
 
 class EmergencyResource(MockResource):
@@ -123,6 +127,24 @@ class TestHealth:
         data = res.json()
         assert data["status"] == "ok"
         assert data["registry_count"] == 2
+
+    @patch("instr_core.api_server.pyvisa")
+    def test_lifespan_shutdown_closes_managed_sessions(
+        self, mock_pyvisa: MagicMock
+    ) -> None:
+        rm = MockResourceManager()
+        mock_pyvisa.ResourceManager.return_value = rm
+        app = create_api_app()
+
+        with TestClient(app) as live_client:
+            response = live_client.post(
+                "/visa/connect",
+                params={"address": "USB0::INSTR"},
+            )
+            assert response.status_code == 200
+
+        assert rm.resources[0].closed == 1
+        assert rm.closed == 1
 
 
 class TestListInstruments:

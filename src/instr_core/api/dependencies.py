@@ -10,6 +10,7 @@ from fastapi import Request
 from ..agent.llm import StructuredPlanner, planner_from_env
 from ..agent.store import AgentRunStore
 from ..sweep import SweepEngine
+from ..safety import safe_turn_off_output
 from ..validator import Registry
 from .services.ownership_service import AddressOwnershipRegistry
 from .services.session_manager import VisaSessionManager
@@ -45,6 +46,38 @@ def init_app_state(app) -> None:
     app.state.address_state = {}
     app.state.address_ownership = AddressOwnershipRegistry()
     app.state.visa_sessions = VisaSessionManager(_get_visa_resource_manager)
+
+
+def shutdown_app_state(app) -> list[str]:
+    """Safely tear down owned outputs and close all managed VISA resources."""
+    errors: list[str] = []
+    ownership: AddressOwnershipRegistry | None = getattr(
+        app.state,
+        "address_ownership",
+        None,
+    )
+    sessions: VisaSessionManager | None = getattr(
+        app.state,
+        "visa_sessions",
+        None,
+    )
+    if sessions is None:
+        return errors
+
+    if ownership is not None:
+        for address, operation_id in ownership.snapshot().items():
+            try:
+                with sessions.lease(address) as resource:
+                    report = safe_turn_off_output(resource, operation_id, address)
+                if report.safe:
+                    ownership.release(address, operation_id)
+                else:
+                    errors.extend(report.errors)
+            except Exception as exc:
+                errors.append(f"{address}: {exc}")
+
+    errors.extend(sessions.shutdown())
+    return errors
 
 
 def get_registry(request: Request) -> Registry:

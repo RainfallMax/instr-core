@@ -42,6 +42,16 @@ function App() {
         }));
       })
       .catch(() => setStatus(t("app.statusUnreachable")));
+
+    fetch(`${API_BASE}/visa/connected`)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Connected sessions request failed (${response.status})`);
+        }
+        return response.json();
+      })
+      .then((sessions: ConnectedInstrument[]) => setConnected(sessions))
+      .catch(() => undefined);
   }, [t]);
 
   const changeLanguage = (language: string) => {
@@ -50,7 +60,25 @@ function App() {
   };
 
   const handleConnect = (inst: ConnectedInstrument) => {
-    setConnected((prev) => [...prev, inst]);
+    setConnected((prev) => [
+      ...prev.filter((item) => item.address !== inst.address),
+      inst,
+    ]);
+  };
+
+  const handleDisconnect = async (address: string) => {
+    const response = await fetch(
+      `${API_BASE}/visa/disconnect?address=${encodeURIComponent(address)}`,
+      { method: "POST" },
+    );
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.detail || t("panels.disconnectFailed"));
+    }
+    setConnected((prev) => prev.filter((item) => item.address !== address));
+    if (selectedInstrument === address) {
+      setSelectedInstrument("");
+    }
   };
 
   const handleSelectSchema = (key: string) => {
@@ -238,6 +266,7 @@ function App() {
                   onSelect={setSelectedInstrument}
                   onBrowseSchema={handleBrowseSchema}
                   onOpenTerminal={handleOpenTerminal}
+                  onDisconnect={handleDisconnect}
                 />
                 <ScpiTerminal
                   selectedInstrument={selectedInstrument}
