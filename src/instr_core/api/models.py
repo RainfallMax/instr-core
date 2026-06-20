@@ -103,6 +103,9 @@ class ConnectedInstrument(BaseModel):
     serial: str | None = None
     idn: str | None = None
     schema_key: str | None = None
+    connected_at: str | None = None
+    healthy: bool = True
+    last_error: str | None = None
 
 
 class EmergencyStopResult(BaseModel):
