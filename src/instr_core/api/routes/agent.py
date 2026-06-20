@@ -24,6 +24,7 @@ from ...agent import (
     DualKeithleyPlanResponse,
     DualKeithleyRun,
 )
+from ...agent.context import build_validation_context, validation_context_fingerprint
 from ...agent.planner import (
     create_dual_keithley_run,
     create_iv_sweep_run,
@@ -37,6 +38,7 @@ from ...agent.store import AgentRunStore
 from ...sweep import SweepSession, SweepStatus
 from ...run_lifecycle import RunStatus, transition_run
 from ..dependencies import (
+    _get_all_address_states,
     _get_address_schema,
     get_address_ownership,
     get_agent_store,
@@ -86,14 +88,24 @@ def create_plan(
 @router.post("/dry-run", response_model=AgentDryRunResponse)
 def dry_run(
     req: AgentDryRunRequest,
+    request: Request,
     registry=Depends(get_registry),
     store: AgentRunStore = Depends(get_agent_store),
+    visa_sessions=Depends(get_visa_sessions),
 ) -> AgentDryRunResponse:
     """Validate an agent plan without touching VISA."""
     run = store.get(req.run_id)
     if run is None:
         raise HTTPException(status_code=404, detail=f"Run '{req.run_id}' not found")
     run = dry_run_plan(run, registry)
+    context = build_validation_context(
+        run,
+        registry,
+        visa_sessions,
+        _get_all_address_states(request),
+    )
+    run.validation_context_fingerprint = validation_context_fingerprint(context)
+    run.validated_at = datetime.now(timezone.utc).isoformat()
     store.update(run)
     return AgentDryRunResponse(run=run)
 
@@ -272,8 +284,10 @@ def create_multi_plan(
 @router.post("/multi/dry-run", response_model=DualKeithleyPlanResponse)
 def dry_run_multi(
     req: DualKeithleyDryRunRequest,
+    request: Request,
     registry=Depends(get_registry),
     store: AgentRunStore = Depends(get_agent_store),
+    visa_sessions=Depends(get_visa_sessions),
 ) -> DualKeithleyPlanResponse:
     """Validate a dual-device plan without touching VISA."""
     run = store.get(req.run_id)
@@ -282,6 +296,14 @@ def dry_run_multi(
     if not isinstance(run, DualKeithleyRun):
         raise HTTPException(status_code=400, detail=f"Run '{req.run_id}' is not a multi run")
     run = dry_run_dual_keithley_plan(run, registry)
+    context = build_validation_context(
+        run,
+        registry,
+        visa_sessions,
+        _get_all_address_states(request),
+    )
+    run.validation_context_fingerprint = validation_context_fingerprint(context)
+    run.validated_at = datetime.now(timezone.utc).isoformat()
     store.update(run)
     return DualKeithleyPlanResponse(run=run)
 

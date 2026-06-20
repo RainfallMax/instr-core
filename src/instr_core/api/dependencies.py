@@ -170,6 +170,15 @@ def _get_address_state(request: Request, address: str) -> dict[str, str] | None:
         return dict(s) if s is not None else None
 
 
+def _get_all_address_states(request: Request) -> dict[str, dict[str, str]]:
+    """Return a deep-enough snapshot of every tracked virtual state."""
+    with request.app.state.address_lock:
+        return {
+            address: dict(state)
+            for address, state in request.app.state.address_state.items()
+        }
+
+
 def _update_address_state_entry(request: Request, address: str, key: str, value: str) -> None:
     with request.app.state.address_lock:
         if address not in request.app.state.address_state:

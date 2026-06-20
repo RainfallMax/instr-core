@@ -93,6 +93,11 @@ class AgentRun(BaseModel):
     completed_at: str | None = None
     stop_requested_at: str | None = None
     transition_history: list[RunTransition] = Field(default_factory=list)
+    validation_context_fingerprint: str | None = None
+    validated_at: str | None = None
+    execution_idempotency_key: str | None = None
+    execution_context_fingerprint: str | None = None
+    execution_attempts: int = 0
 
     def model_post_init(self, __context: object) -> None:
         if not self.transition_history:
@@ -212,6 +217,11 @@ class DualKeithleyRun(BaseModel):
     completed_at: str | None = None
     stop_requested_at: str | None = None
     transition_history: list[RunTransition] = Field(default_factory=list)
+    validation_context_fingerprint: str | None = None
+    validated_at: str | None = None
+    execution_idempotency_key: str | None = None
+    execution_context_fingerprint: str | None = None
+    execution_attempts: int = 0
 
     def model_post_init(self, __context: object) -> None:
         if not self.transition_history:

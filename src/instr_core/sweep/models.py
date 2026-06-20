@@ -87,10 +87,6 @@ class SweepResult(BaseModel):
     error_message: str | None = None
     created_at: str
     completed_at: str | None = None
-    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    started_at: str | None = None
-    stop_requested_at: str | None = None
-    transition_history: list[RunTransition] = Field(default_factory=list)
 
 
 class SweepSession(BaseModel):
@@ -107,6 +103,10 @@ class SweepSession(BaseModel):
     error_message: str | None = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     completed_at: str | None = None
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    started_at: str | None = None
+    stop_requested_at: str | None = None
+    transition_history: list[RunTransition] = Field(default_factory=list)
 
     # Internal: not serialized
     _engine_thread: threading.Thread | None = None
