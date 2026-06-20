@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from ..safety import TeardownReport, safe_turn_off_output
+from ..run_lifecycle import RunStatus, transition_run
 from .models import SweepConfig, SweepPoint, SweepSession, SweepStatus
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,9 @@ class SweepEngine:
         # Prepare threading primitives
         session._stop_event = threading.Event()
 
-        session.status = SweepStatus.RUNNING
+        if session.status == RunStatus.PLANNED:
+            transition_run(session, RunStatus.DRY_RUN, reason="sweep parameters validated")
+        transition_run(session, RunStatus.RUNNING)
         logger.info("Starting sweep %s on %s", session.session_id, session.address)
 
         thread = threading.Thread(
@@ -66,6 +69,8 @@ class SweepEngine:
         if session is None:
             raise KeyError(f"Session {session_id} not found")
         if session._stop_event is not None:
+            if session.status == RunStatus.RUNNING:
+                transition_run(session, RunStatus.STOPPING, reason="stop requested")
             session._stop_event.set()
             logger.info("Stop requested for sweep %s", session_id)
 
@@ -94,6 +99,9 @@ class SweepEngine:
     ) -> None:
         """Enter an optional managed lease and execute the sweep."""
         try:
+            if session.status == RunStatus.PLANNED:
+                transition_run(session, RunStatus.DRY_RUN, reason="sweep parameters validated")
+                transition_run(session, RunStatus.RUNNING)
             context = (
                 visa_or_lease
                 if hasattr(visa_or_lease, "__enter__")
@@ -176,10 +184,9 @@ class SweepEngine:
 
             with self._lock:
                 if session._stop_event is not None and session._stop_event.is_set():
-                    session.status = SweepStatus.ABORTED
+                    transition_run(session, RunStatus.ABORTED)
                 else:
-                    session.status = SweepStatus.COMPLETED
-                session.completed_at = datetime.now(timezone.utc).isoformat()
+                    transition_run(session, RunStatus.COMPLETED)
 
             logger.info(
                 "Sweep %s finished with status %s (%d points)",
@@ -192,9 +199,13 @@ class SweepEngine:
             logger.exception("Sweep %s failed: %s", session.session_id, exc)
             self._safe_turn_off_output(visa, session.session_id)
             with self._lock:
-                session.status = SweepStatus.ERROR
+                target = (
+                    RunStatus.ERROR
+                    if session.status in {RunStatus.RUNNING, RunStatus.STOPPING}
+                    else RunStatus.ERROR
+                )
+                transition_run(session, target, reason=str(exc))
                 session.error_message = str(exc)
-                session.completed_at = datetime.now(timezone.utc).isoformat()
 
     @staticmethod
     def _safe_turn_off_output(visa: Any, session_id: str) -> TeardownReport:

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from ..sweep import SweepConfig
+from ..run_lifecycle import RunStatus, RunTransition
 
 
 class ExperimentType(str, Enum):
@@ -24,14 +26,7 @@ class AgentPlanMode(str, Enum):
     EXECUTE = "execute"
 
 
-class AgentRunStatus(str, Enum):
-    """Lifecycle state for an agent run."""
-
-    PLANNED = "planned"
-    DRY_RUN = "dry_run"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
+AgentRunStatus = RunStatus
 
 
 class ParsedIvSweepIntent(BaseModel):
@@ -92,6 +87,22 @@ class AgentRun(BaseModel):
     sweep_session_id: str | None = None
     error_message: str | None = None
     result: "DualSweepResult | None" = None
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    started_at: str | None = None
+    completed_at: str | None = None
+    stop_requested_at: str | None = None
+    transition_history: list[RunTransition] = Field(default_factory=list)
+
+    def model_post_init(self, __context: object) -> None:
+        if not self.transition_history:
+            self.transition_history.append(
+                RunTransition(
+                    from_status=None,
+                    to_status=self.status,
+                    timestamp=self.created_at,
+                )
+            )
 
 
 class AgentPlanRequest(BaseModel):
@@ -195,6 +206,22 @@ class DualKeithleyRun(BaseModel):
     status: AgentRunStatus = AgentRunStatus.PLANNED
     error_message: str | None = None
     result: DualSweepResult | None = None
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    started_at: str | None = None
+    completed_at: str | None = None
+    stop_requested_at: str | None = None
+    transition_history: list[RunTransition] = Field(default_factory=list)
+
+    def model_post_init(self, __context: object) -> None:
+        if not self.transition_history:
+            self.transition_history.append(
+                RunTransition(
+                    from_status=None,
+                    to_status=self.status,
+                    timestamp=self.created_at,
+                )
+            )
 
 
 class DualKeithleyPlanRequest(BaseModel):

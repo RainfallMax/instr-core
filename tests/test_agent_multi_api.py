@@ -320,7 +320,7 @@ def test_multi_agent_failure_preserves_error_and_retries_shutdown(
 
     assert execute_response.status_code == 500
     stored = client.get(f"/agent/multi/runs/{run_id}").json()["run"]
-    assert stored["status"] == "failed"
+    assert stored["status"] == "error"
     assert "measurement failed" in stored["error_message"]
     source = rm.resources["USB0::SMU::INSTR"]
     assert source.written[-3:] == [":OUTP OFF", ":OUTP OFF", "*RST"]

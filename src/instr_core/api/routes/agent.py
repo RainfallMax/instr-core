@@ -35,6 +35,7 @@ from ...agent.planner import (
 )
 from ...agent.store import AgentRunStore
 from ...sweep import SweepSession, SweepStatus
+from ...run_lifecycle import RunStatus, transition_run
 from ..dependencies import (
     _get_address_schema,
     get_address_ownership,
@@ -312,6 +313,7 @@ def execute_multi(
 
     try:
         try:
+            transition_run(run, RunStatus.RUNNING)
             for address in addresses:
                 visa_sessions.get(address)
             with ExitStack() as stack:
@@ -327,7 +329,8 @@ def execute_multi(
         except (SessionNotFound, SessionUnhealthy) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except Exception as exc:
-            run.status = AgentRunStatus.FAILED
+            if run.status == RunStatus.RUNNING:
+                transition_run(run, RunStatus.ERROR, reason=str(exc))
             run.error_message = str(exc)
             store.update(run)
             raise HTTPException(

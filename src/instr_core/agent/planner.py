@@ -8,6 +8,7 @@ from typing import Any
 
 from ..api.services.sweep_service import validate_sweep_config
 from ..safety import safe_turn_off_output
+from ..run_lifecycle import RunStatus, transition_run
 from ..schema import CommandDef
 from ..schema import InstrumentSchema
 from ..sweep import SweepConfig
@@ -108,7 +109,7 @@ def dry_run_plan(run: AgentRun, registry: Registry) -> AgentRun:
         requires_confirmation=True,
     )
     run.validation = validation
-    run.status = AgentRunStatus.DRY_RUN
+    transition_run(run, RunStatus.DRY_RUN)
     return run
 
 
@@ -225,7 +226,7 @@ def dry_run_dual_keithley_plan(run: DualKeithleyRun, registry: Registry) -> Dual
         estimated_points=estimate_points(run.plan.source_config),
         requires_confirmation=True,
     )
-    run.status = AgentRunStatus.DRY_RUN
+    transition_run(run, RunStatus.DRY_RUN)
     return run
 
 
@@ -299,7 +300,7 @@ def execute_dual_keithley_run(
         mean=sum(values) / len(values) if values else None,
     )
     run.result = DualSweepResult(points=points, summary=summary)
-    run.status = AgentRunStatus.COMPLETED
+    transition_run(run, RunStatus.COMPLETED)
     return run
 
 

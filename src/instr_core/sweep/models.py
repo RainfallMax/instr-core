@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import threading
 from datetime import datetime, timezone
-from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
+from ..run_lifecycle import RunStatus, RunTransition
 
 
 class SweepConfig(BaseModel):
@@ -72,14 +72,7 @@ class SweepPoint(BaseModel):
     timestamp: str  # ISO 8601
 
 
-class SweepStatus(str, Enum):
-    """Lifecycle states of a sweep session."""
-
-    IDLE = "idle"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    ABORTED = "aborted"
-    ERROR = "error"
+SweepStatus = RunStatus
 
 
 class SweepResult(BaseModel):
@@ -94,6 +87,10 @@ class SweepResult(BaseModel):
     error_message: str | None = None
     created_at: str
     completed_at: str | None = None
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    started_at: str | None = None
+    stop_requested_at: str | None = None
+    transition_history: list[RunTransition] = Field(default_factory=list)
 
 
 class SweepSession(BaseModel):
@@ -119,3 +116,11 @@ class SweepSession(BaseModel):
         """Initialise internal mutable state after Pydantic validation."""
         self._engine_thread = None
         self._stop_event = None
+        if not self.transition_history:
+            self.transition_history.append(
+                RunTransition(
+                    from_status=None,
+                    to_status=self.status,
+                    timestamp=self.created_at,
+                )
+            )
