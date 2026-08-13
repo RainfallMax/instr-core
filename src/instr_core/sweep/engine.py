@@ -128,34 +128,46 @@ class SweepEngine:
         """The actual sweep logic running under an acquired resource lease."""
         try:
             config = session.config
+            source_current = config.source_mode == "CURR"
+
+            # Command templates indexed by source mode. ``source_func`` is the
+            # SOUR:FUNC value, ``protect`` the compliance command, ``source_rang``
+            # / ``source_lvl`` the level-setting commands, and ``meas_field`` the
+            # :READ? CSV index of the measured quantity (Keithley returns
+            # "current,voltage,time,status").
+            source_func = "CURR" if source_current else "VOLT"
+            protect = ":SENS:VOLT:PROT" if source_current else ":SENS:CURR:PROT"
+            source_rang = ":SOUR:CURR:RANG" if source_current else ":SOUR:VOLT:RANG"
+            source_lvl = ":SOUR:CURR" if source_current else ":SOUR:VOLT"
+            meas_field = 1 if source_current else 0
 
             # 1. Safety initialisation
             visa.write("*RST")
             visa.write(":OUTP OFF")
-            visa.write(":SOUR:FUNC VOLT")
-            visa.write(f":SENS:CURR:PROT {config.compliance}")
+            visa.write(f":SOUR:FUNC {source_func}")
+            visa.write(f"{protect} {config.compliance}")
 
-            max_voltage = max(abs(config.start_voltage), abs(config.stop_voltage))
-            visa.write(f":SOUR:VOLT:RANG {max_voltage}")
-            visa.write(f":SOUR:VOLT {config.start_voltage}")
+            max_level = max(abs(config.start_voltage), abs(config.stop_voltage))
+            visa.write(f"{source_rang} {max_level}")
+            visa.write(f"{source_lvl} {config.start_voltage}")
 
-            # 2. Generate voltage point sequence
+            # 2. Generate source point sequence
             points = self._generate_voltage_points(config)
 
             # 3. Enable output
             visa.write(":OUTP ON")
 
             # 4. Scan loop
-            for voltage in points:
+            for level in points:
                 if session._stop_event is not None and session._stop_event.is_set():
                     break
 
-                visa.write(f":SOUR:VOLT {voltage}")
+                visa.write(f"{source_lvl} {level}")
 
                 if config.delay_ms > 0:
                     time.sleep(config.delay_ms / 1000.0)
 
-                # Read current with timeout safety
+                # Read the measured quantity with timeout safety
                 original_timeout = getattr(visa, "timeout", None)
                 try:
                     if original_timeout is not None:
@@ -165,14 +177,15 @@ class SweepEngine:
                     if original_timeout is not None:
                         visa.timeout = original_timeout
 
-                # Keithley SMU :READ? may return "current,voltage,time,status"
-                # Take the first field (current)
-                first_field = resp.split(",")[0].strip()
-                current = float(first_field)
+                # Keithley SMU :READ? returns "current,voltage,time,status".
+                # VOLT mode measures current (field 0); CURR mode measures
+                # voltage (field 1).
+                fields = resp.split(",")
+                measured = float(fields[meas_field].strip())
 
                 point = SweepPoint(
-                    voltage=voltage,
-                    current=current,
+                    voltage=level,
+                    current=measured,
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 

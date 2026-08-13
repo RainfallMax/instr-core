@@ -11,6 +11,7 @@ import time
 
 import pytest
 
+from instr_core.schema import InstrumentSchema
 from instr_core.sweep.engine import SweepEngine
 from instr_core.sweep.models import SweepConfig, SweepPoint, SweepSession, SweepStatus
 
@@ -414,6 +415,113 @@ class TestRunSweepMock:
         engine = SweepEngine()
         engine._run_sweep(session, None, visa)
         assert visa.timeout == original_timeout  # Should be restored
+
+
+class TestCurrentSweepMock:
+    """Source-current-measure-voltage mode (:SOUR:FUNC CURR)."""
+
+    def test_current_sweep_writes_current_commands(self) -> None:
+        config = SweepConfig(
+            start_voltage=0,
+            stop_voltage=0.002,
+            step=0.002,
+            compliance=20,
+            direction="UP",
+            delay_ms=0,
+            source_mode="CURR",
+        )
+        session = SweepSession(
+            session_id="curr-sweep",
+            instrument_key="keithley/smu/2600",
+            address="TEST",
+            config=config,
+        )
+        visa = MockVisaResource(responses={":READ?": "0.001,5.0,0,0"})
+        engine = SweepEngine()
+        engine._run_sweep(session, None, visa)
+
+        assert session.status == SweepStatus.COMPLETED
+        assert ":SOUR:FUNC CURR" in visa._written
+        assert any(cmd.startswith(":SENS:VOLT:PROT") for cmd in visa._written)
+        assert any(cmd.startswith(":SOUR:CURR:RANG") for cmd in visa._written)
+        assert any(cmd.startswith(":SOUR:CURR ") for cmd in visa._written)
+        # No voltage-source command may leak into a current sweep.
+        assert not any(":SOUR:VOLT" in cmd for cmd in visa._written)
+
+    def test_current_sweep_reads_voltage_field(self) -> None:
+        config = SweepConfig(
+            start_voltage=0,
+            stop_voltage=0.001,
+            step=0.001,
+            compliance=20,
+            direction="UP",
+            delay_ms=0,
+            source_mode="CURR",
+        )
+        session = SweepSession(
+            session_id="curr-read",
+            instrument_key="keithley/smu/2600",
+            address="TEST",
+            config=config,
+        )
+        # Keithley :READ? returns "current,voltage,time,status"; CURR mode must
+        # take the voltage (second) field, not the current (first).
+        visa = MockVisaResource(responses={":READ?": "0.001,5.0,0,0"})
+        engine = SweepEngine()
+        engine._run_sweep(session, None, visa)
+
+        assert len(session.points) == 2
+        # `voltage` field holds the sourced current, `current` holds measured voltage.
+        assert session.points[0].voltage == 0.0
+        assert session.points[0].current == 5.0
+
+
+class TestSweepConfigCurrentMode:
+    """Validation of CURR-mode limits mirrors VOLT mode."""
+
+    def test_validate_rejects_current_over_limit(self) -> None:
+        schema = InstrumentSchema.model_validate(
+            {
+                "instrument": {"manufacturer": "K", "model": "X", "category": "smu"},
+                "global_limits": {
+                    "voltage": {"max": 20, "unit": "V"},
+                    "current": {"max": 1.0, "unit": "A"},
+                },
+                "commands": [],
+            }
+        )
+        config = SweepConfig(
+            start_voltage=0,
+            stop_voltage=1.5,  # exceeds current max 1.0 A
+            step=0.1,
+            compliance=10,  # within voltage max 20 V
+            source_mode="CURR",
+        )
+
+        with pytest.raises(ValueError, match="current exceeds instrument limit"):
+            config.validate_against_schema(schema)
+
+    def test_validate_rejects_compliance_over_voltage_limit(self) -> None:
+        schema = InstrumentSchema.model_validate(
+            {
+                "instrument": {"manufacturer": "K", "model": "X", "category": "smu"},
+                "global_limits": {
+                    "voltage": {"max": 20, "unit": "V"},
+                    "current": {"max": 1.0, "unit": "A"},
+                },
+                "commands": [],
+            }
+        )
+        config = SweepConfig(
+            start_voltage=0,
+            stop_voltage=0.5,  # within current max
+            step=0.1,
+            compliance=30,  # exceeds voltage max 20 V (compliance is a voltage in CURR mode)
+            source_mode="CURR",
+        )
+
+        with pytest.raises(ValueError, match="compliance exceeds instrument voltage limit"):
+            config.validate_against_schema(schema)
 
 
 # ---------------------------------------------------------------------------

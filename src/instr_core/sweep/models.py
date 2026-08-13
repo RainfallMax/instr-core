@@ -11,7 +11,15 @@ from ..run_lifecycle import RunStatus, RunTransition
 
 
 class SweepConfig(BaseModel):
-    """User-configurable parameters for an IV sweep."""
+    """User-configurable parameters for an IV sweep.
+
+    ``source_mode`` selects the physical quantity the SMU sources:
+    ``VOLT`` sources voltage and measures current (classic IV sweep);
+    ``CURR`` sources current and measures voltage (the four-quadrant
+    inverse).  ``start_voltage``/``stop_voltage`` always describe the
+    sourced quantity regardless of mode, and ``compliance`` always bounds
+    the measured quantity.
+    """
 
     start_voltage: float
     stop_voltage: float
@@ -19,6 +27,7 @@ class SweepConfig(BaseModel):
     compliance: float = Field(gt=0)
     delay_ms: int = Field(default=10, ge=0)
     direction: str = Field(default="UP", pattern="^(UP|DOWN|BOTH)$")
+    source_mode: str = Field(default="VOLT", pattern="^(VOLT|CURR)$")
 
     @model_validator(mode="after")
     def _check_voltage_order(self) -> SweepConfig:
@@ -41,7 +50,12 @@ class SweepConfig(BaseModel):
         return self
 
     def validate_against_schema(self, schema: Any) -> None:
-        """Validate voltage and compliance against instrument global limits.
+        """Validate the sourced quantity and compliance against schema limits.
+
+        In ``CURR`` mode the sourced quantity is current (bounded by
+        ``global_limits.current``) and the compliance is a voltage limit
+        (bounded by ``global_limits.voltage``) — the mirror image of ``VOLT``
+        mode.
 
         Args:
             schema: An InstrumentSchema instance (imported lazily to avoid
@@ -52,6 +66,17 @@ class SweepConfig(BaseModel):
         """
         limits = schema.global_limits
         max_v = max(abs(self.start_voltage), abs(self.stop_voltage))
+
+        if self.source_mode == "CURR":
+            if limits.current is not None and max_v > limits.current.max:
+                raise ValueError(
+                    f"start/stop current exceeds instrument limit: {max_v} > {limits.current.max}"
+                )
+            if limits.voltage is not None and self.compliance > limits.voltage.max:
+                raise ValueError(
+                    f"compliance exceeds instrument voltage limit: {self.compliance} > {limits.voltage.max}"
+                )
+            return
 
         if limits.voltage is not None and max_v > limits.voltage.max:
             raise ValueError(
@@ -65,7 +90,19 @@ class SweepConfig(BaseModel):
 
 
 class SweepPoint(BaseModel):
-    """A single (voltage, current) measurement point."""
+    """A single measurement point.
+
+    Field semantics follow the source mode (see ``SweepConfig.source_mode``):
+
+    - ``VOLT`` mode: ``voltage`` is the sourced voltage, ``current`` is the
+      measured current.
+    - ``CURR`` mode: ``voltage`` holds the sourced *current*, ``current`` holds
+      the measured *voltage*.
+
+    ponytail: field names keep the ``VOLT``-mode meaning for backward
+    compatibility with existing consumers; renaming to ``source``/``measure``
+    is the upgrade path once ``CURR``-mode consumers exist.
+    """
 
     voltage: float
     current: float

@@ -5,21 +5,31 @@ from ...sweep import SweepConfig
 
 
 def validate_sweep_config(config: SweepConfig, schema: InstrumentSchema) -> None:
-    """Validate sweep configuration against instrument global limits."""
+    """Validate sweep configuration against instrument global limits.
+
+    In ``CURR`` mode the sourced quantity is current and the compliance is a
+    voltage limit, mirroring ``VOLT`` mode.
+    """
     limits = schema.global_limits
+    max_v = max(abs(config.start_voltage), abs(config.stop_voltage))
 
-    if limits.voltage is not None:
-        max_v = limits.voltage.max
-        if abs(config.start_voltage) > max_v or abs(config.stop_voltage) > max_v:
+    if config.source_mode == "CURR":
+        if limits.current is not None and max_v > limits.current.max:
             raise ValueError(
-                f"Voltage exceeds max {max_v} {limits.voltage.unit}"
+                f"Current exceeds max {limits.current.max} {limits.current.unit}"
             )
-
-    if limits.current is not None:
-        max_c = limits.current.max
-        if config.compliance > max_c:
+        if limits.voltage is not None and config.compliance > limits.voltage.max:
             raise ValueError(
-                f"Compliance exceeds max {max_c} {limits.current.unit}"
+                f"Compliance exceeds max {limits.voltage.max} {limits.voltage.unit}"
+            )
+    else:
+        if limits.voltage is not None and max_v > limits.voltage.max:
+            raise ValueError(
+                f"Voltage exceeds max {limits.voltage.max} {limits.voltage.unit}"
+            )
+        if limits.current is not None and config.compliance > limits.current.max:
+            raise ValueError(
+                f"Compliance exceeds max {limits.current.max} {limits.current.unit}"
             )
 
     if config.step <= 0:
