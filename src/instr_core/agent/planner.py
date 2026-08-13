@@ -29,14 +29,30 @@ from .parser import parse_iv_sweep_goal
 
 
 def build_command_preview(config: SweepConfig) -> list[str]:
-    """Build the deterministic command preview for an IV sweep."""
-    max_voltage = max(abs(config.start_voltage), abs(config.stop_voltage))
+    """Build the deterministic command preview for a sweep.
+
+    Mirrors the engine's source-mode branch: ``CURR`` sources current and
+    protects voltage, ``VOLT`` sources voltage and protects current.
+    """
+    max_level = max(abs(config.start_voltage), abs(config.stop_voltage))
+    if config.source_mode == "CURR":
+        return [
+            "*RST",
+            ":OUTP OFF",
+            ":SOUR:FUNC CURR",
+            f":SENS:VOLT:PROT {config.compliance:g}",
+            f":SOUR:CURR:RANG {max_level:g}",
+            f":SOUR:CURR {config.start_voltage:g}",
+            ":OUTP ON",
+            "... sweep loop: :SOUR:CURR <point>; :READ? ...",
+            ":OUTP OFF",
+        ]
     return [
         "*RST",
         ":OUTP OFF",
         ":SOUR:FUNC VOLT",
         f":SENS:CURR:PROT {config.compliance:g}",
-        f":SOUR:VOLT:RANG {max_voltage:g}",
+        f":SOUR:VOLT:RANG {max_level:g}",
         f":SOUR:VOLT {config.start_voltage:g}",
         ":OUTP ON",
         "... sweep loop: :SOUR:VOLT <point>; :READ? ...",
@@ -315,8 +331,12 @@ def _apply_preview_state(command: str, argument: str | None, state: dict[str, st
         state["source_mode"] = argument
     elif command == ":SENS:CURR:PROT" and argument is not None:
         state[":SENS:CURR:PROT"] = argument
+    elif command == ":SENS:VOLT:PROT" and argument is not None:
+        state[":SENS:VOLT:PROT"] = argument
     elif command == ":SOUR:VOLT" and argument is not None:
         state[":SOUR:VOLT"] = argument
+    elif command == ":SOUR:CURR" and argument is not None:
+        state[":SOUR:CURR"] = argument
     elif command == ":OUTP" and argument is not None:
         state["output"] = argument
 

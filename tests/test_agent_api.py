@@ -356,3 +356,54 @@ def test_terminal_agent_cannot_be_stopped(mock_pyvisa: MagicMock) -> None:
 
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "RUN_STATE_CONFLICT"
+
+
+@patch("instr_core.api_server.pyvisa")
+def test_agent_current_sweep_plan_and_dry_run(mock_pyvisa: MagicMock) -> None:
+    client = make_client()
+    connect_keithley(client, mock_pyvisa)
+
+    plan_response = client.post(
+        "/agent/plan",
+        json={
+            "goal": "Source current from 0A to 1A in 0.2A steps, "
+                    "measure voltage, 20V compliance",
+            "address": "USB0::INSTR",
+        },
+    )
+
+    assert plan_response.status_code == 200
+    run = plan_response.json()["run"]
+    # The parsed config must carry the current-source mode through to the plan.
+    assert run["plan"]["config"]["source_mode"] == "CURR"
+
+    dry_response = client.post("/agent/dry-run", json={"run_id": run["run_id"]})
+
+    assert dry_response.status_code == 200
+    dry_run = dry_response.json()["run"]
+    assert dry_run["validation"]["valid"] is True
+    # The command preview must source current, not voltage.
+    assert ":SOUR:FUNC CURR" in dry_run["validation"]["commands"]
+    assert any(":SOUR:CURR" in cmd for cmd in dry_run["validation"]["commands"])
+
+
+@patch("instr_core.api_server.pyvisa")
+def test_agent_current_sweep_rejects_compliance_over_voltage(mock_pyvisa: MagicMock) -> None:
+    client = make_client()
+    connect_keithley(client, mock_pyvisa)
+
+    plan_response = client.post(
+        "/agent/plan",
+        json={
+            "goal": "Source current from 0A to 1A in 0.2A steps, "
+                    "measure voltage, 100V compliance",
+            "address": "USB0::INSTR",
+        },
+    )
+    run_id = plan_response.json()["run"]["run_id"]
+
+    dry_response = client.post("/agent/dry-run", json={"run_id": run_id})
+
+    validation = dry_response.json()["run"]["validation"]
+    assert validation["valid"] is False
+    assert any("compliance" in issue.lower() for issue in validation["issues"])

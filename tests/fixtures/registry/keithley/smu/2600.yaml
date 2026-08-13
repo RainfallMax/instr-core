@@ -55,6 +55,17 @@ commands:
     requires:
       source_mode: VOLT
 
+  - command: ":SOUR:CURR:RANG"
+    description: "Set the source current range"
+    parameters:
+      - name: "range"
+        type: "float"
+    range:
+      min: 0.0
+      max: 3.0
+    requires:
+      source_mode: CURR
+
   - command: ":SOUR:CURR"
     description: "Set the source current level"
     parameters:

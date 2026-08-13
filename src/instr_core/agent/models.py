@@ -30,7 +30,12 @@ AgentRunStatus = RunStatus
 
 
 class ParsedIvSweepIntent(BaseModel):
-    """Structured fields parsed from a natural-language IV sweep goal."""
+    """Structured fields parsed from a natural-language IV sweep goal.
+
+    ``source_mode`` mirrors ``SweepConfig.source_mode``: ``VOLT`` for the
+    classic voltage-source/current-measure sweep, ``CURR`` for the
+    current-source/voltage-measure inverse.
+    """
 
     start_voltage: float
     stop_voltage: float
@@ -38,6 +43,7 @@ class ParsedIvSweepIntent(BaseModel):
     compliance: float = Field(gt=0)
     delay_ms: int = Field(default=10, ge=0)
     direction: Literal["UP", "DOWN", "BOTH"] = "UP"
+    source_mode: Literal["VOLT", "CURR"] = "VOLT"
 
     def to_sweep_config(self) -> SweepConfig:
         """Convert parsed intent into the existing sweep config model."""
@@ -48,6 +54,7 @@ class ParsedIvSweepIntent(BaseModel):
             compliance=self.compliance,
             delay_ms=self.delay_ms,
             direction=self.direction,
+            source_mode=self.source_mode,
         )
 
 
