@@ -1,5 +1,5 @@
 {
-  "version": "0.3.0-demo",
+  "version": "1.0.0",
   "instrument": {
     "manufacturer": "Keithley",
     "model": "2611B",
@@ -24,526 +24,237 @@
   },
   "commands": [
     {
-      "command": "SOUR:VOLT",
-      "description": "Set voltage source level. Range depends on configured voltage range.",
+      "command": ":SOUR:FUNC",
+      "description": "Set the source function (VOLT or CURR)",
+      "parameters": [
+        {
+          "name": "function",
+          "type": "string",
+          "allowed_values": [
+            "VOLT",
+            "CURR"
+          ]
+        }
+      ],
+      "requires": {
+        "output": "OFF"
+      },
+      "tags": [
+        "setup",
+        "sweep"
+      ],
+      "sets_state": {
+        "source_mode": "$ARGUMENT_UPPER"
+      }
+    },
+    {
+      "command": ":SOUR:VOLT",
+      "description": "Set the source voltage level",
       "parameters": [
         {
           "name": "voltage",
           "type": "float"
         }
       ],
-      "range": {
-        "min": 0,
-        "max": 202
+      "requires": {
+        "source_mode": "VOLT"
       },
-      "safety": {
-        "sequence": [
-          {
-            "message": "Verify instrument identity, firmware version, and calibration status."
-          },
-          {
-            "message": "Set current compliance before enabling voltage output."
-          },
-          {
-            "message": "Use 4-wire (remote sense) connection for accurate DUT voltage."
-          },
-          {
-            "message": "Maximum floating voltage is 250 V DC. Never exceed between any terminal and earth ground."
-          },
-          {
-            "message": "Set current compliance before enabling output. Compliance must be below DUT damage threshold."
-          }
-        ]
-      },
-      "sets_state": {
-        "SOUR:VOLT": "$ARGUMENT"
+      "forbidden_when": {
+        "output": "ON"
       },
       "tags": [
-        "iv-sweep",
-        "source-and-measure",
-        "pulse-measurement",
-        "power-sweep",
-        "source-voltage-measure-current"
-      ]
+        "sweep",
+        "voltage"
+      ],
+      "range": {
+        "min": -202,
+        "max": 202
+      },
+      "sets_state": {
+        ":SOUR:VOLT": "$ARGUMENT"
+      },
+      "safety": {
+        "compliance_required": true,
+        "compliance_parameter": ":SENS:CURR:PROT"
+      }
     },
     {
-      "command": "SOUR:VOLT:Range",
-      "description": "Set voltage source range to optimize resolution and accuracy.",
+      "command": ":SOUR:CURR",
+      "description": "Set the source current level",
       "parameters": [
         {
           "name": "current",
           "type": "float"
         }
       ],
-      "range": {
-        "min": 0,
-        "max": 1.515
+      "requires": {
+        "source_mode": "CURR"
       },
-      "safety": {
-        "sequence": [
-          {
-            "message": "Verify instrument identity, firmware version, and calibration status."
-          },
-          {
-            "message": "Set current compliance before enabling voltage output."
-          },
-          {
-            "message": "Use 4-wire (remote sense) connection for accurate DUT voltage."
-          },
-          {
-            "message": "Maximum floating voltage is 250 V DC. Never exceed between any terminal and earth ground."
-          },
-          {
-            "message": "Set current compliance before enabling output. Compliance must be below DUT damage threshold."
-          }
-        ]
-      },
-      "sets_state": {
-        "SOUR:VOLT:Range": "$ARGUMENT"
+      "forbidden_when": {
+        "output": "ON"
       },
       "tags": [
-        "iv-sweep",
-        "source-and-measure",
-        "pulse-measurement",
-        "power-sweep",
-        "source-voltage-measure-current"
-      ]
+        "sweep",
+        "current"
+      ],
+      "range": {
+        "min": -1.515,
+        "max": 1.515
+      },
+      "sets_state": {
+        ":SOUR:CURR": "$ARGUMENT"
+      },
+      "safety": {
+        "compliance_required": true,
+        "compliance_parameter": ":SENS:VOLT:PROT"
+      }
     },
     {
-      "command": "SENS:CURR:Range",
-      "description": "Set current measurement range for best resolution.",
+      "command": ":SOUR:VOLT:RANG",
+      "description": "Set the source voltage range",
       "parameters": [
         {
-          "name": "power",
+          "name": "range",
           "type": "float"
         }
       ],
-      "range": {
-        "min": 0,
-        "max": 30.3
-      },
-      "safety": {
-        "sequence": [
-          {
-            "message": "Verify instrument identity, firmware version, and calibration status."
-          },
-          {
-            "message": "Set current compliance before enabling voltage output."
-          },
-          {
-            "message": "Use 4-wire (remote sense) connection for accurate DUT voltage."
-          },
-          {
-            "message": "Maximum floating voltage is 250 V DC. Never exceed between any terminal and earth ground."
-          },
-          {
-            "message": "Set current compliance before enabling output. Compliance must be below DUT damage threshold."
-          }
-        ]
-      },
-      "sets_state": {
-        "SENS:CURR:Range": "$ARGUMENT"
-      },
       "tags": [
-        "iv-sweep",
-        "source-and-measure",
-        "pulse-measurement",
-        "power-sweep",
-        "source-voltage-measure-current"
-      ]
-    },
-    {
-      "command": "SOUR:VOLT:ILIM",
-      "description": "Set current compliance (limit) to protect DUT.",
-      "parameters": [
-        {
-          "name": "voltage",
-          "type": "float"
-        }
+        "setup"
       ],
       "range": {
         "min": 0,
         "max": 202
       },
-      "safety": {
-        "sequence": [
-          {
-            "message": "Verify instrument identity, firmware version, and calibration status."
-          },
-          {
-            "message": "Set current compliance before enabling voltage output."
-          },
-          {
-            "message": "Use 4-wire (remote sense) connection for accurate DUT voltage."
-          },
-          {
-            "message": "Maximum floating voltage is 250 V DC. Never exceed between any terminal and earth ground."
-          },
-          {
-            "message": "Set current compliance before enabling output. Compliance must be below DUT damage threshold."
-          }
-        ]
-      },
       "sets_state": {
-        "SOUR:VOLT:ILIM": "$ARGUMENT"
-      },
-      "tags": [
-        "iv-sweep",
-        "source-and-measure",
-        "pulse-measurement",
-        "power-sweep",
-        "source-voltage-measure-current"
-      ]
+        ":SOUR:VOLT:RANG": "$ARGUMENT"
+      }
     },
     {
-      "command": "SOUR:CURR",
-      "description": "Set current source level. Range depends on configured current range.",
+      "command": ":SOUR:CURR:RANG",
+      "description": "Set the source current range",
       "parameters": [
         {
-          "name": "current",
+          "name": "range",
           "type": "float"
         }
+      ],
+      "tags": [
+        "setup"
       ],
       "range": {
         "min": 0,
         "max": 1.515
       },
-      "safety": {
-        "sequence": [
-          {
-            "message": "Verify instrument identity and command compatibility."
-          },
-          {
-            "message": "Set voltage compliance before enabling current output."
-          },
-          {
-            "message": "Set voltage compliance before enabling high-current output. Verify DUT wiring and thermal limits."
-          }
-        ]
-      },
       "sets_state": {
-        "SOUR:CURR": "$ARGUMENT"
-      },
-      "tags": [
-        "iv-sweep",
-        "source-and-measure",
-        "pulse-measurement",
-        "power-sweep",
-        "source-current-measure-voltage"
-      ]
+        ":SOUR:CURR:RANG": "$ARGUMENT"
+      }
     },
     {
-      "command": "SENS:VOLT:Range",
-      "description": "Set voltage measurement range for best resolution.",
+      "command": ":SENS:CURR:PROT",
+      "description": "Set the current compliance (protection) level",
       "parameters": [
         {
-          "name": "voltage",
+          "name": "limit",
           "type": "float"
         }
       ],
-      "range": {
-        "min": 0,
-        "max": 202
-      },
-      "safety": {
-        "sequence": [
-          {
-            "message": "Verify instrument identity and command compatibility."
-          },
-          {
-            "message": "Set voltage compliance before enabling current output."
-          },
-          {
-            "message": "Set voltage compliance before enabling high-current output. Verify DUT wiring and thermal limits."
-          }
-        ]
-      },
-      "sets_state": {
-        "SENS:VOLT:Range": "$ARGUMENT"
-      },
       "tags": [
-        "iv-sweep",
-        "source-and-measure",
-        "pulse-measurement",
-        "power-sweep",
-        "source-current-measure-voltage"
-      ]
-    },
-    {
-      "command": "SOUR:CURR:VLIM",
-      "description": "Set voltage compliance (limit) to protect DUT.",
-      "parameters": [
-        {
-          "name": "current",
-          "type": "float"
-        }
+        "setup",
+        "sweep"
       ],
       "range": {
         "min": 0,
         "max": 1.515
       },
-      "safety": {
-        "sequence": [
-          {
-            "message": "Verify instrument identity and command compatibility."
-          },
-          {
-            "message": "Set voltage compliance before enabling current output."
-          },
-          {
-            "message": "Set voltage compliance before enabling high-current output. Verify DUT wiring and thermal limits."
-          }
-        ]
-      },
       "sets_state": {
-        "SOUR:CURR:VLIM": "$ARGUMENT"
-      },
-      "tags": [
-        "iv-sweep",
-        "source-and-measure",
-        "pulse-measurement",
-        "power-sweep",
-        "source-current-measure-voltage"
-      ]
+        ":SENS:CURR:PROT": "$ARGUMENT"
+      }
     },
     {
-      "command": "SOUR:SWE:VOLT:LIN",
-      "description": "Configure linear voltage sweep with start, stop, and step.",
+      "command": ":SENS:VOLT:PROT",
+      "description": "Set the voltage compliance (protection) level",
       "parameters": [
         {
-          "name": "voltage",
+          "name": "limit",
           "type": "float"
         }
+      ],
+      "tags": [
+        "setup",
+        "sweep"
       ],
       "range": {
         "min": 0,
         "max": 202
       },
+      "sets_state": {
+        ":SENS:VOLT:PROT": "$ARGUMENT"
+      }
+    },
+    {
+      "command": ":OUTP",
+      "description": "Turn the output ON or OFF",
+      "parameters": [
+        {
+          "name": "state",
+          "type": "string",
+          "allowed_values": [
+            "ON",
+            "OFF"
+          ]
+        }
+      ],
+      "tags": [
+        "setup",
+        "sweep"
+      ],
+      "sets_state": {
+        "output": "$ARGUMENT_UPPER"
+      },
       "safety": {
         "sequence": [
           {
-            "message": "Configure sweep range within instrument and DUT safe limits."
+            "before": ":OUTP ON",
+            "require_state_keys_present": [
+              ":SENS:CURR:PROT",
+              ":SENS:VOLT:PROT"
+            ],
+            "message": "Compliance must be configured before enabling output"
           },
           {
-            "message": "Set appropriate compliance before starting sweep."
-          },
-          {
-            "message": "Use reading buffer to store sweep results."
-          },
-          {
-            "message": "Sweep must not exceed DUT absolute maximum ratings. Use compliance limits."
+            "after": ":OUTP OFF",
+            "expect_state": {
+              "output": "OFF"
+            },
+            "message": "Output should be turned OFF at end of test"
           }
         ]
-      },
-      "sets_state": {
-        "SOUR:SWE:VOLT:LIN": "$ARGUMENT"
-      },
-      "tags": [
-        "iv-sweep",
-        "source-and-measure",
-        "pulse-measurement",
-        "power-sweep",
-        "iv-sweep"
-      ]
+      }
     },
     {
-      "command": "SOUR:SWE:VOLT:LOG",
-      "description": "Configure logarithmic voltage sweep for wide dynamic range.",
+      "command": ":OUTP:DEL",
+      "description": "Set output delay time",
       "parameters": [
         {
-          "name": "current",
+          "name": "delay",
           "type": "float"
         }
       ],
-      "range": {
-        "min": 0,
-        "max": 1.515
-      },
-      "safety": {
-        "sequence": [
-          {
-            "message": "Configure sweep range within instrument and DUT safe limits."
-          },
-          {
-            "message": "Set appropriate compliance before starting sweep."
-          },
-          {
-            "message": "Use reading buffer to store sweep results."
-          },
-          {
-            "message": "Sweep must not exceed DUT absolute maximum ratings. Use compliance limits."
-          }
-        ]
-      },
-      "sets_state": {
-        "SOUR:SWE:VOLT:LOG": "$ARGUMENT"
-      },
       "tags": [
-        "iv-sweep",
-        "source-and-measure",
-        "pulse-measurement",
-        "power-sweep",
-        "iv-sweep"
+        "setup"
       ]
     },
     {
-      "command": "TRIG:TRAN:DEL",
-      "description": "Set trigger delay for sweep point settling.",
+      "command": ":READ?",
+      "description": "Return the measurement from the active source function",
       "parameters": [
         {
-          "name": "voltage",
+          "name": "value",
           "type": "float"
         }
       ],
-      "range": {
-        "min": 0,
-        "max": 202
-      },
-      "safety": {
-        "sequence": [
-          {
-            "message": "Configure sweep range within instrument and DUT safe limits."
-          },
-          {
-            "message": "Set appropriate compliance before starting sweep."
-          },
-          {
-            "message": "Use reading buffer to store sweep results."
-          },
-          {
-            "message": "Sweep must not exceed DUT absolute maximum ratings. Use compliance limits."
-          }
-        ]
-      },
-      "sets_state": {
-        "TRIG:TRAN:DEL": "$ARGUMENT"
-      },
       "tags": [
-        "iv-sweep",
-        "source-and-measure",
-        "pulse-measurement",
-        "power-sweep",
-        "iv-sweep"
-      ]
-    },
-    {
-      "command": "SOUR:PULS:VOLT",
-      "description": "Set pulse voltage level.",
-      "parameters": [
-        {
-          "name": "pulse_current",
-          "type": "float"
-        }
-      ],
-      "range": {
-        "min": 0,
-        "max": 10
-      },
-      "safety": {
-        "sequence": [
-          {
-            "message": "Verify pulse duty cycle constraints to avoid instrument overload."
-          },
-          {
-            "message": "Set baseline (off-state) compliance before pulse."
-          },
-          {
-            "message": "Pulse mode can deliver high transient power. Ensure DUT and cabling can handle peak current."
-          },
-          {
-            "message": "Duty cycle must be within instrument specification to prevent thermal damage."
-          }
-        ]
-      },
-      "sets_state": {
-        "SOUR:PULS:VOLT": "$ARGUMENT"
-      },
-      "tags": [
-        "iv-sweep",
-        "source-and-measure",
-        "pulse-measurement",
-        "power-sweep",
-        "pulse-measurement"
-      ]
-    },
-    {
-      "command": "SOUR:PULS:WIDT",
-      "description": "Set pulse width in microseconds.",
-      "parameters": [
-        {
-          "name": "pulse_width",
-          "type": "float"
-        }
-      ],
-      "range": {
-        "min": 0,
-        "max": 100
-      },
-      "safety": {
-        "sequence": [
-          {
-            "message": "Verify pulse duty cycle constraints to avoid instrument overload."
-          },
-          {
-            "message": "Set baseline (off-state) compliance before pulse."
-          },
-          {
-            "message": "Pulse mode can deliver high transient power. Ensure DUT and cabling can handle peak current."
-          },
-          {
-            "message": "Duty cycle must be within instrument specification to prevent thermal damage."
-          }
-        ]
-      },
-      "sets_state": {
-        "SOUR:PULS:WIDT": "$ARGUMENT"
-      },
-      "tags": [
-        "iv-sweep",
-        "source-and-measure",
-        "pulse-measurement",
-        "power-sweep",
-        "pulse-measurement"
-      ]
-    },
-    {
-      "command": "SOUR:PULS:DEL",
-      "description": "Set pulse delay before measurement.",
-      "parameters": [
-        {
-          "name": "pulse_current",
-          "type": "float"
-        }
-      ],
-      "range": {
-        "min": 0,
-        "max": 10
-      },
-      "safety": {
-        "sequence": [
-          {
-            "message": "Verify pulse duty cycle constraints to avoid instrument overload."
-          },
-          {
-            "message": "Set baseline (off-state) compliance before pulse."
-          },
-          {
-            "message": "Pulse mode can deliver high transient power. Ensure DUT and cabling can handle peak current."
-          },
-          {
-            "message": "Duty cycle must be within instrument specification to prevent thermal damage."
-          }
-        ]
-      },
-      "sets_state": {
-        "SOUR:PULS:DEL": "$ARGUMENT"
-      },
-      "tags": [
-        "iv-sweep",
-        "source-and-measure",
-        "pulse-measurement",
-        "power-sweep",
-        "pulse-measurement"
+        "measure"
       ]
     }
   ]
