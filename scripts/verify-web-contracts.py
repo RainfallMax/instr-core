@@ -14,6 +14,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_WEB_ROOT = PROJECT_ROOT.parent / "instr.web"
 CORE_FIXTURES_ROOT = PROJECT_ROOT / "tests" / "fixtures" / "web_contracts"
+WEB_REGISTRY_ROOT = PROJECT_ROOT / "tests" / "fixtures" / "web_registry"
 
 
 def run(command: list[str], cwd: Path) -> None:
@@ -70,6 +71,32 @@ def sync_fixtures(web_root: Path) -> list[Path]:
     return synced_paths
 
 
+def sync_registry(web_root: Path) -> list[Path]:
+    """Sync web-exported YAML registry files into the runtime registry fixtures."""
+    exported_root = web_root / "tmp" / "registry"
+    exported_paths = sorted(exported_root.rglob("*.yaml"))
+
+    if not exported_paths:
+        raise RuntimeError(
+            f"No exported web registry found in {exported_root}. "
+            "Check that `pnpm registry:export` completed successfully."
+        )
+
+    if WEB_REGISTRY_ROOT.exists():
+        shutil.rmtree(WEB_REGISTRY_ROOT)
+    WEB_REGISTRY_ROOT.mkdir(parents=True, exist_ok=True)
+
+    synced_paths: list[Path] = []
+    for source_path in exported_paths:
+        rel = source_path.relative_to(exported_root)
+        target_path = WEB_REGISTRY_ROOT / rel
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_path, target_path)
+        synced_paths.append(target_path)
+
+    return synced_paths
+
+
 def python_for_pytest() -> str:
     venv_python = PROJECT_ROOT / ".venv" / "bin" / "python"
 
@@ -115,9 +142,16 @@ def main() -> int:
     for path in synced_paths:
         print(f"  {path.relative_to(PROJECT_ROOT)}")
 
+    run(["corepack", "pnpm", "registry:export"], cwd=web_root)
+    synced_registry = sync_registry(web_root)
+
+    print("Synced web registry fixtures:")
+    for path in synced_registry:
+        print(f"  {path.relative_to(PROJECT_ROOT)}")
+
     if not args.skip_pytest:
         run(
-            [python_for_pytest(), "-m", "pytest", "tests/test_web_contracts.py", "-v"],
+            [python_for_pytest(), "-m", "pytest", "tests/test_web_contracts.py", "tests/test_web_registry.py", "-v"],
             cwd=PROJECT_ROOT,
         )
 

@@ -1,0 +1,163 @@
+version: 1.0.0
+instrument:
+  manufacturer: Keithley
+  model: 2611B
+  series: System SourceMeter 2600B Series
+  category: smu
+  description: Fictionalized demonstration record. Identity and technical facts are unverified.
+  doc_source: Keithley 2611B demo seed
+global_limits:
+  voltage:
+    max: 202
+    unit: V
+  current:
+    max: 1.515
+    unit: A
+  power:
+    max: 30.3
+    unit: W
+commands:
+  - command: :SOUR:FUNC
+    description: Set the source function (VOLT or CURR)
+    parameters:
+      - name: function
+        type: string
+        allowed_values:
+          - VOLT
+          - CURR
+    requires:
+      output: OFF
+    tags:
+      - setup
+      - sweep
+    sets_state:
+      source_mode: $ARGUMENT_UPPER
+  - command: :SOUR:VOLT
+    description: Set the source voltage level
+    parameters:
+      - name: voltage
+        type: float
+    requires:
+      source_mode: VOLT
+    forbidden_when:
+      output: ON
+    tags:
+      - sweep
+      - voltage
+    range:
+      min: -202
+      max: 202
+    sets_state:
+      :SOUR:VOLT: $ARGUMENT
+    safety:
+      compliance_required: true
+      compliance_parameter: :SENS:CURR:PROT
+  - command: :SOUR:CURR
+    description: Set the source current level
+    parameters:
+      - name: current
+        type: float
+    requires:
+      source_mode: CURR
+    forbidden_when:
+      output: ON
+    tags:
+      - sweep
+      - current
+    range:
+      min: -1.515
+      max: 1.515
+    sets_state:
+      :SOUR:CURR: $ARGUMENT
+    safety:
+      compliance_required: true
+      compliance_parameter: :SENS:VOLT:PROT
+  - command: :SOUR:VOLT:RANG
+    description: Set the source voltage range
+    parameters:
+      - name: range
+        type: float
+    tags:
+      - setup
+    range:
+      min: 0
+      max: 202
+    sets_state:
+      :SOUR:VOLT:RANG: $ARGUMENT
+  - command: :SOUR:CURR:RANG
+    description: Set the source current range
+    parameters:
+      - name: range
+        type: float
+    tags:
+      - setup
+    range:
+      min: 0
+      max: 1.515
+    sets_state:
+      :SOUR:CURR:RANG: $ARGUMENT
+  - command: :SENS:CURR:PROT
+    description: Set the current compliance (protection) level
+    parameters:
+      - name: limit
+        type: float
+    tags:
+      - setup
+      - sweep
+    range:
+      min: 0
+      max: 1.515
+    sets_state:
+      :SENS:CURR:PROT: $ARGUMENT
+  - command: :SENS:VOLT:PROT
+    description: Set the voltage compliance (protection) level
+    parameters:
+      - name: limit
+        type: float
+    tags:
+      - setup
+      - sweep
+    range:
+      min: 0
+      max: 202
+    sets_state:
+      :SENS:VOLT:PROT: $ARGUMENT
+  - command: :OUTP
+    description: Turn the output ON or OFF
+    parameters:
+      - name: state
+        type: string
+        allowed_values:
+          - ON
+          - OFF
+    tags:
+      - setup
+      - sweep
+    sets_state:
+      output: $ARGUMENT_UPPER
+    safety:
+      sequence:
+        - before: :OUTP ON
+          require_state_keys_present:
+            - :SENS:CURR:PROT
+            - :SENS:VOLT:PROT
+          message: Compliance must be configured before enabling output
+        - after: :OUTP OFF
+          expect_state:
+            output: OFF
+          message: Output should be turned OFF at end of test
+  - command: :OUTP:DEL
+    description: Set output delay time
+    parameters:
+      - name: delay
+        type: float
+    tags:
+      - setup
+  - command: :READ?
+    description: Return the measurement from the active source function
+    parameters:
+      - name: value
+        type: float
+    tags:
+      - measure
+
