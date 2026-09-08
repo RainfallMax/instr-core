@@ -8,7 +8,9 @@ on:
       - "src/instr_core/schema.py"
       - "src/instr_core/validator.py"
       - "tests/test_web_contracts.py"
+      - "tests/test_web_registry.py"
       - "tests/fixtures/web_contracts/**"
+      - "tests/fixtures/web_registry/**"
       - "pyproject.toml"
       - "uv.lock"
   push:
@@ -20,7 +22,9 @@ on:
       - "src/instr_core/schema.py"
       - "src/instr_core/validator.py"
       - "tests/test_web_contracts.py"
+      - "tests/test_web_registry.py"
       - "tests/fixtures/web_contracts/**"
+      - "tests/fixtures/web_registry/**"
       - "pyproject.toml"
       - "uv.lock"
   workflow_dispatch:
@@ -37,21 +41,6 @@ jobs:
         with:
           path: instr-core
 
-      - name: Check out instr.web
-        uses: actions/checkout@v4
-        with:
-          repository: RainfallMax/instr.web
-          path: instr.web
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-
-      - name: Install instr.web dependencies
-        working-directory: instr.web
-        run: corepack pnpm install --frozen-lockfile
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -64,6 +53,6 @@ jobs:
         working-directory: instr-core
         run: uv sync --group dev
 
-      - name: Verify instr.web contracts against instr-core
+      - name: Verify synced web contracts
         working-directory: instr-core
-        run: python scripts/verify-web-contracts.py
+        run: uv run pytest tests/test_web_contracts.py tests/test_web_registry.py -v
