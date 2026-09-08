@@ -48,6 +48,10 @@ jobs:
         with:
           node-version: "24"
 
+      - name: Install instr.web dependencies
+        working-directory: instr.web
+        run: corepack pnpm install --frozen-lockfile
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
